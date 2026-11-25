@@ -1,8 +1,278 @@
 rules_version = '2';
 
+// ===============================================================
+// Assumed Data Model (Backend Phase 1B — docs/BACKEND.md §2 & §4)
+// ===============================================================
+//
+// Collection: users/{uid}
+//   Server-managed fields (Cloud Functions only, immutable to clients in Phase 1):
+//     - email: string
+//     - photoURL: string | null
+//     - plan: 'free' | 'pro'
+//     - proSource: 'xendit' | 'google_play' | 'manual' | null
+//     - proSince: timestamp | null
+//     - createdAt: timestamp
+//     - activeOwned: number (Phase 2 will allow atomic batch updates via getAfter)
+//   Client-writable fields (owner update only):
+//     - name: string (optional if absent/null initially; trimmed non-empty, <= 100 chars)
+//     - accent: 'indigo' | 'teal' | 'tangerine' | 'forest' | null (non-indigo requires Pro)
+//     - theme: 'light' | 'dark' | null
+//     - sound: bool | null
+//     - haptics: bool | null
+//     - onboarding: bool | null
+//     - checkedAreas: bool | null
+//
+// Collection: users/{uid}/areas/{areaId}
+//   Fields:
+//     - name: string (required, trimmed non-empty, <= 60 chars)
+//     - color: string (required, trimmed non-empty, <= 60 chars)
+//     - order: number | null (optional)
+//
+// Collection: users/{uid}/tasks/{taskId} (loose tasks only; project tasks move to projects/{pid}/tasks in Phase 2)
+//   Fields:
+//     - title: string (required, trimmed non-empty, <= 300 chars)
+//     - project: null (optional; must be null if present)
+//     - area: string | null (optional, <= 100 chars)
+//     - section: string | null (optional, <= 100 chars)
+//     - assignee: string | null (optional, <= 100 chars)
+//     - status: 'todo' | 'in_progress' | 'done' | null (optional)
+//     - prio: 'high' | 'med' | 'low' | null (optional)
+//     - start: string | null (optional, YYYY-MM-DD, <= 10 chars)
+//     - due: string | null (optional, YYYY-MM-DD, <= 10 chars)
+//     - time: string | null (optional, HH:MM, <= 5 chars)
+//     - dur: int | null (optional, 1..1440 minutes, Pro only)
+//     - rec: 'daily' | 'weekly' | 'weekdays' | 'monthly' | null (optional; weekdays/monthly require Pro)
+//     - notes: string | null (optional, <= 10000 chars)
+//     - rems: list<'m10'|'m30'|'h1'|'d0'|'d1'|'d3'> | null (optional; <= 1 item Free, <= 6 items Pro)
+//     - guide: bool | null (optional)
+//     - createdBy: string | null (optional; must equal uid; immutable once set)
+//     - createdAt: timestamp | null (optional; immutable once set)
+//     - updatedAt: timestamp | null (optional)
+//     - completedAt: timestamp | null (optional)
+//
+// Collection: users/{uid}/reminders/{taskId}
+//   Fields:
+//     - keys: list<'m10'|'m30'|'h1'|'d0'|'d1'|'d3'> (required; <= 1 item Free, <= 6 items Pro)
+//     - updatedAt: timestamp | null (optional)
+//
+// Denied in Phase 1:
+//   - projects/{pid} and all nested subcollections (Phase 2)
+//   - invites/{token} (Phase 2)
+//   - purchases/{purchaseId} (server-only, Cloud Functions)
+//   - all other unmatched paths (default deny)
+// ===============================================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Deny all client access by default until Step 1B implements fine-grained rules.
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return request.auth.uid;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && me() == uid;
+    }
+
+    // Check exists() first so rules never crash if users/{uid} has not been created yet,
+    // and use Map.get() with a 'free' default so a missing plan field fails closed.
+    function isPro(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid)).data.get('plan', 'free') == 'pro';
+    }
+
+    function isNonEmptyString(val, maxLen) {
+      return val is string && val.trim().size() > 0 && val.size() <= maxLen;
+    }
+
+    // Keep optional string validation flat (no nested helper calls) to stay well within
+    // Firestore Rules' 1000-expression evaluation budget on full task updates.
+    function optStr(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+
+    // Only the 6 reminder keys supported by TaskFlow (src/lib/logic.ts) are allowed.
+    // Built-in List.hasOnly() prevents arbitrary strings/types and avoids unrolled loops.
+    function validReminderKeys(items, uid) {
+      return items is list
+        && items.size() <= 6
+        && items.hasOnly(['m10', 'm30', 'h1', 'd0', 'd1', 'd3'])
+        // Check size <= 1 before isPro(uid) so Free writes do not pay for an extra get().
+        && (items.size() <= 1 || isPro(uid));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function validUserUpdate() {
+      let d = request.resource.data;
+      let changed = d.diff(resource.data).affectedKeys();
+      let name = d.get('name', null);
+      let accent = d.get('accent', null);
+
+      // Whitelist writable fields so server-managed fields (plan, proSource, proSince,
+      // createdAt, email, photoURL, and Phase-1 activeOwned) and arbitrary keys cannot be touched.
+      return changed.hasOnly([
+        'name',
+        'accent',
+        'theme',
+        'sound',
+        'haptics',
+        'onboarding',
+        'checkedAreas'
+      ])
+      // Allow untouched absent/null name (e.g. initial doc), but reject blank/null when name is edited.
+      && ((!changed.hasAny(['name']) && name == null) || isNonEmptyString(name, 100))
+      // Non-indigo accent colours are Pro-only; keep resource.data.get('plan', 'free') inline
+      // so it short-circuits for absent/null/indigo and avoids a redundant get() on users/{uid}.
+      && (accent == null
+          || accent == 'indigo'
+          || (accent in ['teal', 'tangerine', 'forest'] && resource.data.get('plan', 'free') == 'pro'))
+      && (d.get('theme', null) == null || d.theme in ['light', 'dark'])
+      && (d.get('sound', null) == null || d.sound is bool)
+      && (d.get('haptics', null) == null || d.haptics is bool)
+      && (d.get('onboarding', null) == null || d.onboarding is bool)
+      && (d.get('checkedAreas', null) == null || d.checkedAreas is bool);
+    }
+
+    function validArea() {
+      let a = request.resource.data;
+      return a.keys().hasOnly(['name', 'color', 'order'])
+        && isNonEmptyString(a.get('name', null), 60)
+        && isNonEmptyString(a.get('color', null), 60)
+        && (a.get('order', null) == null || a.order is number);
+    }
+
+    function validTask(uid) {
+      let t = request.resource.data;
+      let dur = t.get('dur', null);
+      let rec = t.get('rec', null);
+      let rems = t.get('rems', null);
+      // Combine Pro checks so isPro(uid) is evaluated at most once even when all Pro fields are set.
+      let needsPro = dur != null
+        || rec in ['weekdays', 'monthly']
+        || (rems is list && rems.size() > 1);
+
+      return t.keys().hasOnly([
+        'title',
+        'project',
+        'area',
+        'section',
+        'assignee',
+        'status',
+        'prio',
+        'start',
+        'due',
+        'time',
+        'dur',
+        'rec',
+        'notes',
+        'rems',
+        'guide',
+        'createdBy',
+        'createdAt',
+        'updatedAt',
+        'completedAt'
+      ])
+      && isNonEmptyString(t.get('title', null), 300)
+      // Loose tasks cannot reference a project; project tasks live under projects/{pid}/tasks in Phase 2.
+      && t.get('project', null) == null
+      // Pro-only task fields: duration, weekday/monthly recurrence, and >1 reminder.
+      && (dur == null || (dur is int && dur > 0 && dur <= 1440))
+      && (rec == null || rec in ['daily', 'weekly', 'weekdays', 'monthly'])
+      && (rems == null || (rems is list && rems.size() <= 6 && rems.hasOnly(['m10', 'm30', 'h1', 'd0', 'd1', 'd3'])))
+      && (t.get('status', null) == null || t.status in ['todo', 'in_progress', 'done'])
+      && (t.get('prio', null) == null || t.prio in ['high', 'med', 'low'])
+      && optStr(t.get('area', null), 100)
+      && optStr(t.get('section', null), 100)
+      && optStr(t.get('assignee', null), 100)
+      && optStr(t.get('start', null), 10)
+      && optStr(t.get('due', null), 10)
+      && optStr(t.get('time', null), 5)
+      && optStr(t.get('notes', null), 10000)
+      && (t.get('guide', null) == null || t.guide is bool)
+      && (t.get('createdBy', null) == null || (t.createdBy is string && t.createdBy == uid))
+      && (t.get('createdAt', null) == null || t.createdAt is timestamp)
+      && (t.get('updatedAt', null) == null || t.updatedAt is timestamp)
+      && (t.get('completedAt', null) == null || t.completedAt is timestamp)
+      // Evaluate isPro(uid) last so invalid writes or Free writes never pay for a get().
+      && (!needsPro || isPro(uid));
+    }
+
+    // Prevent clients from altering or erasing audit fields once populated.
+    function immutableTaskFieldsUnchanged() {
+      return (resource.data.get('createdBy', null) == null
+          || request.resource.data.get('createdBy', null) == resource.data.createdBy)
+        && (resource.data.get('createdAt', null) == null
+          || request.resource.data.get('createdAt', null) == resource.data.createdAt);
+    }
+
+    function validReminder(uid) {
+      let r = request.resource.data;
+      // Use bracket notation r['keys'] so field lookup does not collide with Map.keys().
+      // Phase 2 will check ownerPlan via the task's project for shared project reminders.
+      return r.keys().hasOnly(['keys', 'updatedAt'])
+        && 'keys' in r
+        && validReminderKeys(r['keys'], uid)
+        && (r.get('updatedAt', null) == null || r.updatedAt is timestamp);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      // Strictly owner-only read to protect PII (email, photoURL, plan, private settings).
+      allow read: if isOwner(uid);
+      // Profile lifecycle is managed exclusively by Cloud Functions (e.g. onUserCreated).
+      allow create, delete: if false;
+      allow update: if isOwner(uid) && validUserUpdate();
+
+      match /areas/{areaId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && validArea();
+      }
+
+      match /tasks/{taskId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid) && validTask(uid);
+        allow update: if isOwner(uid) && validTask(uid) && immutableTaskFieldsUnchanged();
+      }
+
+      match /reminders/{taskId} {
+        allow read, delete: if isOwner(uid);
+        allow create, update: if isOwner(uid) && validReminder(uid);
+      }
+    }
+
+    // Phase 2: shared projects and nested subcollections (members, tasks, activity) are denied in Phase 1.
+    match /projects/{pid} {
+      allow read, write: if false;
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Phase 2: project invite links are denied in Phase 1.
+    match /invites/{token} {
+      allow read, write: if false;
+    }
+
+    // Server-only: payment records written exclusively by Cloud Functions.
+    match /purchases/{purchaseId} {
+      allow read, write: if false;
+    }
+
+    // Default deny for all other paths.
     match /{document=**} {
       allow read, write: if false;
     }
