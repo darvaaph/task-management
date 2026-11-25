@@ -226,16 +226,16 @@ Hover desktop: border menjadi `--line2`.
 
 ### 6.10 Bottom sheet (HP)
 
-Latar `--surface`, radius atas 22, handle 38 × 5 di tengah, overlay `rgba(0,0,0,.38)`, animasi naik 0.28 detik. Tinggi maksimal 82 % layar. Tombol Simpan di bawah, Hapus di kiri dengan gaya Bahaya.
+Latar `--surface`, radius atas 22, handle 38 × 5 di tengah (area tarik 34 px setinggi penuh lebar: tarik ke bawah lebih dari 90 px atau jentik cepat untuk menutup, kurang dari itu kembali), overlay `rgba(0,0,0,.38)`, animasi naik 0.28 detik. Tinggi maksimal 82 % layar. Tombol Simpan di bawah, Hapus di kiri dengan gaya Bahaya.
 Dipakai untuk: detail tugas, tambah tugas, profil.
 
 ### 6.11 Panel detail (desktop)
 
 Lebar 360 px di kanan, border kiri `--line`, label kiri 86 px dalam grid dua kolom. Jam diisi dengan `<input type="time">` dan bisa dihapus ("Hapus jam"). Tugas tanpa jam tetap sah.
 
-**Urutan isi detail tugas (desktop dan HP):** judul → **Catatan** → lokasi → status → prioritas → tanggal/mulai/jam → durasi, ulangi, pengingat → PIC. Catatan adalah isi tugas, jadi selalu langsung terlihat saat detail dibuka, dan selalu punya label tertulis.
+**Urutan isi detail tugas:** judul → **Catatan** → (desktop: lokasi → status → prioritas → …; HP: status → prioritas → RINCIAN). Catatan adalah isi tugas, jadi selalu langsung terlihat saat detail dibuka, dan selalu punya label tertulis. Judul dan catatan tumbuh mengikuti isinya (`AutoTextarea`), mulai dari 1 baris (catatan desktop 2). Lingkaran centang sejajar tengah baris pertama judul.
 
-**Di HP**, Durasi, Ulangi, dan Pengingat tampil sebagai baris ringkas (label kiri, nilai sekarang di kanan, `›`, tinggi 44 px, `aria-expanded`). Mengetuk baris membuka chip-nya; hanya satu yang terbuka sekaligus. Hapus dan Simpan menempel di tepi bawah sheet (latar `--surface`, garis atas `--line`) supaya menutup tidak perlu menggulir. Simpan hanya menutup; semua perubahan sudah tersimpan saat dibuat.
+**Di HP**, semua properti selain status dan prioritas ada dalam satu kartu **RINCIAN** (latar `--bg`, radius 12, baris dipisah garis `--line`): Lokasi, Tanggal (‹ hari › + chip Hari ini · Besok · Senin depan · Tanpa tanggal · **Pilih tanggal…**), Mulai, Jam, Durasi, Ulangi, Pengingat, PIC. Setiap baris: label kiri `--fg2`, nilai kanan `--fg`, tinggi minimal 44 px. Lokasi, Durasi, Ulangi, Pengingat, dan PIC berupa baris ringkas dengan `›` (`aria-expanded`) yang membuka pilihannya di tempat; hanya satu yang terbuka sekaligus. Mulai, Jam, dan "Pilih tanggal…" membuka pemilih tanggal/jam bawaan perangkat, jadi format tanggal browser ("25-Nov-2026") tidak pernah tampil. Prioritas di HP memakai huruf 13 px seperti Status, dengan warna prioritas saat terpilih. Hapus dan Simpan menempel di tepi bawah sheet (latar `--surface`, garis atas `--line`) supaya menutup tidak perlu menggulir. Simpan hanya menutup; semua perubahan sudah tersimpan saat dibuat.
 
 ### 6.12 Tambah tugas (composer)
 

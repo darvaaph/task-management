@@ -1,13 +1,13 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { PEOPLE, PRIO, STATUS, STATUS_KEYS } from '../lib/constants'
-import { addDays, diffDays, fmtDay, nextMonday, today } from '../lib/dates'
-import { destOfTask, remindersOf } from '../lib/logic'
+import { addDays, diffDays, fmt, fmtDay, nextMonday, today } from '../lib/dates'
+import { destInfo, destOfTask, remindersOf } from '../lib/logic'
 import type { Recurrence, Task } from '../lib/types'
 import { ProBadge } from './Pro'
 import { NotifyHint } from './Reminders'
 import { useStore } from '../store'
 import { DestButton, DestList } from './DestPicker'
-import { Avatar, Chip, PrioPicker, Sheet, useEscape } from './ui'
+import { AutoTextarea, Avatar, Chip, PrioPicker, Sheet, useEscape } from './ui'
 
 const input = 'rounded-[8px] border border-line2 bg-bg px-4 text-[13px] font-medium text-fg'
 
@@ -33,7 +33,7 @@ function CheckButton({ t, size }: { t: Task; size: number }) {
       aria-pressed={done}
       onClick={() => { if (!done) setPop(true); s.toggleTask(t.id) }}
       onAnimationEnd={() => setPop(false)}
-      className={`mt-2.5 grid flex-none place-items-center rounded-full p-0 text-[12px] font-bold text-bg transition-colors duration-(--dur-fast) ${pop ? 'animate-pop' : ''}`}
+      className={`mt-0.5 grid flex-none place-items-center rounded-full p-0 text-[12px] font-bold text-bg transition-colors duration-(--dur-fast) ${pop ? 'animate-pop' : ''}`}
       style={{ width: size, height: size, border: `1.6px solid ${done ? 'var(--fg3)' : PRIO[t.prio].c}`, background: done ? 'var(--fg3)' : 'transparent' }}
     >
       {done ? '✓' : ''}
@@ -115,6 +115,44 @@ const remLabel = (t: Task) => {
   if (!t.due) return 'Atur tanggal dulu'
   const names = remindersOf(t).map(k => [...REM_TIMED, ...REM_DAY].find(([x]) => x === k)?.[1]).filter(Boolean)
   return names.length ? names.join(', ') : 'Tidak ada'
+}
+
+/** Phone: a date or time row that shows its value and opens the device's own picker on tap. */
+function PickerRow({ label, type, value, shown, onChange, onClear }: { label: string; type: 'date' | 'time'; value: string | null; shown: string; onChange: (v: string | null) => void; onClear: () => void }) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <div className="flex min-h-22 items-center gap-4 border-t border-line pr-4 pl-7 text-[14px]">
+      <span className="flex-none text-fg2">{label}</span>
+      <span className="flex-1" />
+      {value && <button type="button" onClick={onClear} className="border-0 bg-transparent p-3 text-[13px] font-medium text-fg3">Hapus</button>}
+      <span className="relative">
+        <button type="button" onClick={() => openPicker(ref.current)} className={`h-18 rounded-pill border-0 px-6 text-[14px] font-medium ${value ? 'bg-surface2 text-fg' : 'bg-transparent text-fg3'}`}>{shown}</button>
+        <input ref={ref} type={type} value={value ?? ''} onChange={e => onChange(e.target.value || null)} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0" />
+      </span>
+    </div>
+  )
+}
+
+// The raw date field shows the browser's own format ("25-Nov-2026"); a chip that opens the picker keeps the app's wording.
+const openPicker = (el: HTMLInputElement | null) => {
+  if (!el) return
+  try { el.showPicker() } catch { el.focus(); el.click() }
+}
+
+/** Phone: quick date chips plus "Pilih tanggal…", which opens the device calendar. */
+function DueChipsPhone({ d }: { d: ReturnType<typeof useDetail> }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const opts: [string, string | null][] = [['Hari ini', today()], ['Besok', addDays(today(), 1)], ['Senin depan', nextMonday()], ['Tanpa tanggal', null]]
+  const custom = d.t.due != null && !opts.some(([, v]) => v === d.t.due)
+  return (
+    <div className="flex flex-wrap gap-2.5">
+      {opts.map(([l, v]) => <Chip key={l} size="lg" active={d.t.due === v} onClick={() => d.setDue(v)}>{l}</Chip>)}
+      <span className="relative">
+        <Chip size="lg" active={custom} onClick={() => openPicker(ref.current)}>{custom ? fmt(d.t.due) : 'Pilih tanggal…'}</Chip>
+        <input ref={ref} type="date" value={d.t.due ?? ''} onChange={e => d.setDue(e.target.value || null)} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0" />
+      </span>
+    </div>
+  )
 }
 
 /** Phone: a setting that shows its current value and opens its chips on tap, so the sheet stays short. */
@@ -230,12 +268,12 @@ export function DetailPanel({ task, floating }: { task: Task; floating?: boolean
       </div>
       <div className="flex items-start gap-5">
         <CheckButton t={t} size={22} />
-        <textarea value={t.title} onChange={e => d.upd({ title: e.target.value })} rows={2} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[20px] leading-tight font-semibold text-fg outline-none" />
+        <AutoTextarea value={t.title} onChange={e => d.upd({ title: e.target.value })} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[20px] leading-tight font-semibold text-fg outline-none" />
       </div>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-3 text-[13px] text-fg3">
           Catatan
-          <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={3} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-y rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
+          <AutoTextarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={2} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-none rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
         </label>
         <NoteLinks text={t.notes} />
       </div>
@@ -288,50 +326,59 @@ export function DetailPanel({ task, floating }: { task: Task; floating?: boolean
 }
 
 /** Phone: bottom sheet with the same fields, larger touch targets. */
+type Fold = 'loc' | 'dur' | 'rec' | 'rem' | 'pic'
+
 export function DetailSheet({ task }: { task: Task }) {
   const d = useDetail(task)
   const t = task
   const lbl = 'text-label text-fg3'
-  const [fold, setFold] = useState<null | 'dur' | 'rec' | 'rem'>(null)
-  const toggle = (k: 'dur' | 'rec' | 'rem') => setFold(f => (f === k ? null : k))
+  const [fold, setFold] = useState<Fold | null>(null)
+  const toggle = (k: Fold) => setFold(f => (f === k ? null : k))
+  const cur = destOfTask(t)
+  const who = t.assignee ? PEOPLE[t.assignee]?.name : null
   return (
     <Sheet onClose={d.close} label="Detail tugas">
       <div className="flex items-start gap-5">
         <CheckButton t={t} size={24} />
-        <textarea value={t.title} onChange={e => d.upd({ title: e.target.value })} rows={2} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[21px] leading-tight font-semibold text-fg outline-none" />
+        <AutoTextarea value={t.title} onChange={e => d.upd({ title: e.target.value })} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[21px] leading-tight font-semibold text-fg outline-none" />
       </div>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-4"><span className={lbl}>CATATAN</span>
-          <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={2} placeholder="Catatan atau tautan…" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-6 text-[14px] leading-normal text-fg outline-none" />
+          <AutoTextarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} placeholder="Catatan atau tautan…" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-5 text-[14px] leading-normal text-fg outline-none" />
         </label>
         <NoteLinks text={t.notes} />
       </div>
-      <div className="flex flex-col gap-4"><span className={lbl}>LOKASI</span><Location d={d} big /></div>
       <div className="flex flex-col gap-4"><span className={lbl}>STATUS</span><StatusPicker t={t} big /></div>
       <div className="flex flex-col gap-4"><span className={lbl}>PRIORITAS</span><PrioPicker size="lg" stretch value={t.prio} onChange={p => d.upd({ prio: p })} /></div>
-      <div className="flex flex-col rounded-[12px] bg-bg text-[14px]">
-        <div className="flex items-center gap-4 border-b border-line py-3 pr-4 pl-7">
-          <span className="flex-1 text-fg2">Tanggal</span>
-          <button type="button" aria-label="Sehari sebelumnya" onClick={() => d.shift(-1)} className="size-18 border-0 bg-transparent text-[18px] text-fg2">‹</button>
-          <span>{t.due ? fmtDay(t.due) : 'Tanpa tanggal'}</span>
-          <button type="button" aria-label="Sehari sesudahnya" onClick={() => d.shift(1)} className="size-18 border-0 bg-transparent text-[18px] text-fg2">›</button>
+      <div className="flex flex-col gap-4">
+        <span className={lbl}>RINCIAN</span>
+        {/* One list style for every property: label left, value right. */}
+        <div className="flex flex-col overflow-hidden rounded-[12px] bg-bg text-[14px] [&>*:first-child]:border-t-0">
+          <FoldRow label="Lokasi" value={destInfo(cur, d.s.projects, d.s.areas).label} open={fold === 'loc'} onToggle={() => toggle('loc')}>
+            <DestList tall value={cur} onPick={v => { d.s.moveTask(t, v); setFold(null) }} />
+          </FoldRow>
+          <div className="flex flex-col gap-4 border-t border-line pt-3 pr-4 pb-6 pl-7">
+            <div className="flex min-h-19 items-center gap-2">
+              <span className="flex-1 text-fg2">Tanggal</span>
+              <button type="button" aria-label="Sehari sebelumnya" onClick={() => d.shift(-1)} className="size-20 border-0 bg-transparent text-[18px] text-fg2">‹</button>
+              <span className="min-w-[96px] text-center font-medium text-fg">{t.due ? fmtDay(t.due) : 'Tanpa tanggal'}</span>
+              <button type="button" aria-label="Sehari sesudahnya" onClick={() => d.shift(1)} className="size-20 border-0 bg-transparent text-[18px] text-fg2">›</button>
+            </div>
+            <DueChipsPhone d={d} />
+          </div>
+          <PickerRow
+            label="Mulai" type="date" value={t.start} shown={t.start ? `${fmt(t.start)} · ${startHint(t)}` : 'Tidak ada'}
+            onChange={v => d.upd({ start: v, due: v && (!t.due || t.due < v) ? v : t.due })} onClear={() => d.upd({ start: null })}
+          />
+          <PickerRow label="Jam" type="time" value={t.time} shown={t.time ?? 'Tidak ada'} onChange={v => d.upd({ time: v })} onClear={() => d.upd({ time: null })} />
+          <FoldRow label="Durasi" value={durLabel(t)} open={fold === 'dur'} onToggle={() => toggle('dur')}><Duration d={d} big /></FoldRow>
+          <FoldRow label="Ulangi" value={recLabel(t)} open={fold === 'rec'} onToggle={() => toggle('rec')}><Repeat d={d} big /></FoldRow>
+          <FoldRow label="Pengingat" value={remLabel(t)} open={fold === 'rem'} onToggle={() => toggle('rem')}><Reminders d={d} big /></FoldRow>
+          {d.proj && d.proj.members.length > 1 && (
+            <FoldRow label="PIC" value={who ?? 'Belum ada'} open={fold === 'pic'} onToggle={() => toggle('pic')}><Pics d={d} big /></FoldRow>
+          )}
         </div>
-        <div className="border-b border-line px-7 py-5"><DueChips d={d} big /></div>
-        <div className="flex items-center gap-4 border-b border-line py-3.5 pr-4 pl-7">
-          <span className="flex-1 text-fg2">Mulai</span>
-          {t.start && <button type="button" onClick={() => d.upd({ start: null })} className="border-0 bg-transparent p-3 text-[13px] font-medium text-fg3">Hapus</button>}
-          <input type="date" value={t.start ?? ''} onChange={e => { const v = e.target.value || null; d.upd({ start: v, due: v && (!t.due || t.due < v) ? v : t.due }) }} aria-label="Tanggal mulai" className={`${input} h-18`} />
-        </div>
-        <div className="flex items-center gap-4 py-3.5 pr-4 pl-7">
-          <span className="flex-1 text-fg2">Jam</span>
-          {t.time && <button type="button" onClick={() => d.upd({ time: null })} className="border-0 bg-transparent p-3 text-[13px] font-medium text-fg3">Hapus</button>}
-          <input type="time" value={t.time ?? ''} onChange={e => d.upd({ time: e.target.value || null })} aria-label="Jam tugas" className={`${input} h-18`} />
-        </div>
-        <FoldRow label="Durasi" value={durLabel(t)} open={fold === 'dur'} onToggle={() => toggle('dur')}><Duration d={d} big /></FoldRow>
-        <FoldRow label="Ulangi" value={recLabel(t)} open={fold === 'rec'} onToggle={() => toggle('rec')}><Repeat d={d} big /></FoldRow>
-        <FoldRow label="Pengingat" value={remLabel(t)} open={fold === 'rem'} onToggle={() => toggle('rem')}><Reminders d={d} big /></FoldRow>
       </div>
-      {d.proj && d.proj.members.length > 1 && <div className="flex flex-col gap-4"><span className={lbl}>PIC</span><Pics d={d} big /></div>}
       {/* Pinned to the sheet's bottom edge (offset by the sheet's own bottom padding) so closing never needs a scroll. */}
       <div className="sticky bottom-[calc(-1*max(34px,calc(env(safe-area-inset-bottom)+12px)))] z-[1] -mx-10 -mb-[max(34px,calc(env(safe-area-inset-bottom)+12px))] flex gap-4 border-t border-line bg-surface px-10 pt-5 pb-[max(12px,env(safe-area-inset-bottom))]">
         <button type="button" onClick={() => d.s.deleteTask(t.id)} className="h-24 rounded-[12px] border border-line2 bg-transparent px-9 text-[15px] font-medium text-high">Hapus</button>

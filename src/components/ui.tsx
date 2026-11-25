@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode, type RefObject, type TextareaHTMLAttributes } from 'react'
 import { PRIO, PRIO_KEYS } from '../lib/constants'
 import type { Priority } from '../lib/types'
 
@@ -97,8 +97,8 @@ export function PrioPicker({ value, onChange, size = 'sm', stretch }: { value: P
             type="button"
             aria-pressed={on}
             onClick={() => onChange(k)}
-            className={`border text-badge ${stretch ? 'flex-1' : ''} ${size === 'lg' ? 'h-20 rounded-md text-[12px]' : 'h-14 rounded-[6px] px-4'}`}
-            style={{ borderColor: on ? p.c : 'var(--line2)', background: on ? p.bg : 'transparent', color: on ? p.c : 'var(--fg3)' }}
+            className={`border ${stretch ? 'flex-1' : ''} ${size === 'lg' ? 'h-20 rounded-md text-[13px] font-medium' : 'text-badge h-14 rounded-[6px] px-4'}`}
+            style={{ borderColor: on ? p.c : 'var(--line2)', background: on ? p.bg : 'transparent', color: on ? p.c : size === 'lg' ? 'var(--fg2)' : 'var(--fg3)' }}
           >
             {p.label}
           </button>
@@ -179,15 +179,45 @@ export function useDialog(ref: RefObject<HTMLElement | null>, onClose: () => voi
   }, [ref])
 }
 
-/** Bottom sheet (phone): overlay + panel sliding up, focus trapped, Esc closes. */
+/** Pull distance (px) past which letting go of the handle closes the sheet. */
+const SHEET_CLOSE = 90
+
+/** Bottom sheet (phone): overlay + panel sliding up, focus trapped, Esc closes, drag the handle down to close. */
 export function Sheet({ onClose, children, label, maxH = '82%', elevated }: { onClose: () => void; children: ReactNode; label: string; maxH?: string; elevated?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   useDialog(ref, onClose)
+  const [dy, setDy] = useState(0)
+  const drag = useRef<{ y: number; t: number } | null>(null)
+  const down = (e: PointerEvent<HTMLElement>) => {
+    drag.current = { y: e.clientY, t: e.timeStamp }
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+  }
+  const move = (e: PointerEvent<HTMLElement>) => { if (drag.current) setDy(Math.max(0, e.clientY - drag.current.y)) }
+  const up = (e: PointerEvent<HTMLElement>) => {
+    const g = drag.current
+    drag.current = null
+    if (!g) return
+    const dist = e.clientY - g.y
+    // A quick flick closes too, even if it is short.
+    if (dist > SHEET_CLOSE || (dist > 30 && dist / Math.max(1, e.timeStamp - g.t) > 0.5)) onClose()
+    else setDy(0)
+  }
   return (
     <>
       <div className={`animate-fade fixed inset-0 bg-black/40 ${elevated ? 'z-[14]' : 'z-[8]'}`} onClick={onClose} />
-      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} className={`animate-up fixed inset-x-0 bottom-0 flex flex-col gap-8 overflow-auto [&>*]:flex-none rounded-t-sheet bg-surface px-10 pt-5 pb-[max(34px,calc(env(safe-area-inset-bottom)+12px))] outline-none ${elevated ? 'z-[15]' : 'z-[9]'}`} style={{ maxHeight: maxH }}>
-        <span aria-hidden="true" className="h-2.5 w-19 flex-none self-center rounded-[9px] bg-line2" />
+      <div
+        ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label}
+        className={`animate-up fixed inset-x-0 bottom-0 flex flex-col gap-8 overflow-auto [&>*]:flex-none rounded-t-sheet bg-surface px-10 pt-5 pb-[max(34px,calc(env(safe-area-inset-bottom)+12px))] outline-none ${elevated ? 'z-[15]' : 'z-[9]'}`}
+        style={{ maxHeight: maxH, transform: dy ? `translateY(${dy}px)` : undefined, transition: drag.current ? 'none' : 'transform var(--dur-base) var(--ease-standard)' }}
+      >
+        <div
+          aria-hidden="true"
+          onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setDy(0) }}
+          className="-mx-10 -mt-5 -mb-4 flex h-17 cursor-grab items-center justify-center"
+          style={{ touchAction: 'none' }}
+        >
+          <span className="h-2.5 w-19 rounded-[9px] bg-line2" />
+        </div>
         {children}
       </div>
     </>
@@ -214,4 +244,16 @@ export function useEscape(fn: () => void) {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [fn])
+}
+
+/** Textarea that grows with its text; `rows` is the minimum height. */
+export function AutoTextarea({ rows = 1, style, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = el.scrollHeight + 'px'
+  }, [props.value])
+  return <textarea ref={ref} rows={rows} {...props} style={{ ...style, overflow: 'hidden' }} />
 }

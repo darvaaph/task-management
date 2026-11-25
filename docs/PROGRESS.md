@@ -28,7 +28,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Logo "Cincin terbuka": `LogoMark` di sidebar dan halaman Masuk, favicon SVG/PNG, apple-touch-icon, ikon 192/512 + maskable untuk PWA | `components/icons.tsx`, `public/`, `index.html` | DESIGN §5.1 |
 | PWA: manifest, meta iOS/Android, service worker offline (shell + aset hasil build + font), hanya aktif di build produksi | `public/manifest.webmanifest`, `public/sw.js`, `main.tsx`, `index.html` | DESIGN §6.28; uji dengan `npm run build` lalu `npm run preview` |
 | Notifikasi pengingat selama aplikasi terbuka: jadwal dari `rems`, izin lewat tombol, klik membuka tugas, tidak dobel setelah muat ulang | `components/Reminders.tsx`, `lib/logic.ts` (`reminderTimes`), `public/sw.js`, `store.tsx` (`markNotified`) | DESIGN §6.22 |
-| Detail tugas lebih pendek di HP: catatan di bawah judul, Durasi/Ulangi/Pengingat jadi baris ringkas, Hapus/Simpan menempel di bawah (isi sheet 1.288 → 983 px) | `components/TaskDetail.tsx` | DESIGN §6.11 |
+| Detail tugas lebih pendek di HP: catatan di bawah judul, Durasi/Ulangi/Pengingat jadi baris ringkas, Hapus/Simpan menempel di bawah (isi sheet 1.288 → 839 px); semua properti dalam satu kartu RINCIAN, tanggal/jam lewat pemilih bawaan, sheet bisa ditarik ke bawah untuk ditutup | `components/TaskDetail.tsx` | DESIGN §6.11 |
 | Gerak mikro: centang memantul, warna centang/judul berganti halus, progress bar mengikuti token gerak (mati saat reduced motion) | `TaskRow.tsx`, `TaskDetail.tsx`, `ui.tsx`, `index.css` | DESIGN §6.32 |
 
 ## Belum dibangun
