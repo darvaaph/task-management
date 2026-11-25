@@ -8,7 +8,7 @@ import { AccentPicker, ProBadge, ProScreen } from './components/Pro'
 import { AuthView } from './views/AuthView'
 import { IconCalendar, IconFolder, IconInbox, IconToday, LogoMark } from './components/icons'
 import { DetailPanel, DetailSheet } from './components/TaskDetail'
-import { Segmented, Sheet } from './components/ui'
+import { Modal, Segmented, Sheet } from './components/ui'
 import { FREE_PROJECT_QUOTA } from './lib/constants'
 import { searchShortcut, useMedia, useTouch } from './lib/device'
 import { canVibrate } from './lib/feedback'
@@ -59,6 +59,7 @@ export default function App() {
       {s.ui.overlay === 'share' && proj && <ShareProject project={proj} mobile={mobile} />}
       {s.ui.overlay === 'areas' && <ManageAreas mobile={mobile} />}
       {s.ui.pro && <ProScreen mobile={mobile} />}
+      {s.pendingMigration && <LocalMigrationDialog mobile={mobile} />}
     </>
   )
   if (!s.account.loggedIn) return <><AuthView mobile={mobile} /><Toast mobile={mobile} /></>
@@ -272,6 +273,43 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
       <button type="button" onClick={() => { onClose(); s.signOut() }} className="h-24 rounded-[12px] border border-line2 bg-transparent text-[15px] font-medium text-high">Keluar</button>
     </Sheet>
   )
+}
+
+function LocalMigrationDialog({ mobile }: { mobile: boolean }) {
+  const s = useStore()
+  const m = s.pendingMigration
+  if (!m) return null
+  const parts = [
+    m.areas.length ? `${m.areas.length} area` : '',
+    m.tasks.length ? `${m.tasks.length} tugas lepas` : '',
+  ].filter(Boolean)
+  const body = (
+    <>
+      <h2 className="m-0 font-display text-[20px] leading-tight font-semibold">Pindahkan data di perangkat ini ke akun Anda?</h2>
+      <p className="m-0 text-[13.5px] leading-normal text-fg2">
+        Ditemukan {parts.join(' dan ')} di browser ini. Data yang dipindahkan hanya area dan tugas lepas; proyek lokal tetap di perangkat ini.
+      </p>
+      {s.migrationError && <div role="alert" className="rounded-[8px] bg-high-soft px-6 py-4.5 text-[13px] text-high">{s.migrationError}</div>}
+      <div className={mobile ? 'flex flex-col gap-3' : 'flex gap-4'}>
+        {!mobile && (
+          <button type="button" disabled={s.migrating} onClick={s.skipMigration} className="h-20 flex-1 rounded-md border border-line2 bg-transparent text-[14px] font-medium text-fg disabled:opacity-50">
+            Lewati
+          </button>
+        )}
+        <button type="button" disabled={s.migrating} onClick={() => void s.migrateLocalData()} className={`${mobile ? 'h-24 rounded-[12px] text-[15px]' : 'h-20 flex-1 rounded-md text-[14px]'} border-0 bg-fg font-semibold text-bg disabled:opacity-60`}>
+          {s.migrating ? 'Memindahkan…' : 'Pindahkan'}
+        </button>
+        {mobile && (
+          <button type="button" disabled={s.migrating} onClick={s.skipMigration} className="h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg disabled:opacity-50">
+            Lewati
+          </button>
+        )}
+      </div>
+    </>
+  )
+  return mobile
+    ? <Sheet onClose={s.skipMigration} label="Pindahkan data lokal">{body}</Sheet>
+    : <Modal onClose={s.skipMigration} label="Pindahkan data lokal" width={440}>{body}</Modal>
 }
 
 function Toast({ mobile }: { mobile?: boolean }) {

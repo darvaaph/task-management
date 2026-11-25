@@ -318,7 +318,8 @@ Satu layar masuk tanpa isian email, kata sandi, atau Lupa kata sandi (login hany
 - Pemisah `atau`, lalu tombol aksen **"Coba Mode Demo"** dengan keterangan *"Tanpa daftar. Data contoh tersimpan di perangkat ini."* Mode Demo tetap lokal dan tidak menyentuh Firebase.
 - Error tampil di atas tombol utama (`role="alert"`, latar `--high-soft`, teks `--high`) dengan pesan pendek yang tidak menyalahkan (*"Masuk dibatalkan."*, *"Tidak bisa terhubung ke Google. Periksa koneksi internet lalu coba lagi."*, *"Gagal masuk dengan Google. Coba lagi."*, *"Profil akun belum siap. Coba lagi sebentar."*).
 - Setelah login Google pertama (akun belum memiliki area di cloud), layar berpindah ke **"Pilih area awal"** (6.29), lalu menulis area pilihan dan tugas panduan (`guideTasks()`) ke akun.
-- Keluar (`signOut`) mengakhiri sesi dan kembali ke layar Masuk. *(Tawaran memindahkan data lokal ke akun menyusul pada langkah 1E.)*
+- Jika browser memiliki data lokal non-demo sebelum login pertama, setelah Pilih area awal tampil dialog (`Modal` 440 px di desktop, `Sheet` di HP): **"Pindahkan data di perangkat ini ke akun Anda?"** dengan ringkasan jumlah area/tugas lepas serta tombol **Pindahkan** (saat berjalan: *"Memindahkan…"*) dan **Lewati**. Hanya area dan tugas lepas yang dipindahkan (batch maks. 500 tulis per batch, idempoten sehingga tidak terduplikasi bila ditekan dua kali). Bila berhasil tampil toast *"[x area dan y tugas] dipindahkan ke akun Anda"*; bila gagal tampil alert *"Gagal memindahkan data lokal. Coba lagi."*
+- Keluar (`signOut`) mengakhiri sesi dan kembali ke layar Masuk.
 
 ### 6.21 Pencarian
 
@@ -449,6 +450,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.14 (25 Nov 2026):** Dialog tawaran pindahkan data lokal non-demo (area & tugas lepas) setelah login Google pertama (§6.20).
 - **0.13 (25 Nov 2026):** Catatan toast kegagalan sinkronisasi/Urungkan cloud (§6.16) dan pesan tombol Beli Pro akun Google sebelum pembayaran aktif (§6.18).
 - **0.12 (25 Nov 2026):** Layar Masuk diperbarui ke login Google + Mode Demo (§6.20) dan Pilih area awal setelah login Google pertama (§6.29).
 - **0.11 (25 Nov 2026):** Area di proyek bersama bersifat per anggota (tanpa area otomatis), halaman undangan tanpa area pemilik, Simulasi hanya di demo.

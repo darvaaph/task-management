@@ -56,8 +56,42 @@ export interface Account {
   notified?: string[]
 }
 
+export interface LocalMigration {
+  areas: Area[]
+  tasks: Task[]
+}
+
 const ACCOUNT0: Account = { loggedIn: false, demo: false, name: 'Anda', plan: 'free', accent: 'indigo', onboarding: false, checkedAreas: false }
 const EMPTY_DATA: Data = { tasks: [], projects: [], areas: [], activity: [] }
+const BATCH_LIMIT = 500
+
+const safeDocId = (raw: string, fallback: string) =>
+  raw.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || fallback
+
+/** Heuristic for pre-1E browsers that stored untouched seed() data before loggedIn was ever true. */
+function isUntouchedSeed(saved: { data?: Data; account?: Partial<Account>; seeded?: boolean }): boolean {
+  if (saved.seeded === true) return true
+  if (saved.account?.loggedIn) return false
+  const tasks = saved.data?.tasks ?? []
+  const projects = saved.data?.projects ?? []
+  return (
+    tasks.length === 20
+    && tasks.some(t => t.id === 't1' && t.title === 'Kirim revisi bab 2')
+    && projects.some(p => p.id === 'uas' && p.name === 'Tugas Akhir UAS')
+  )
+}
+
+function extractMigration(saved: { data?: Data; account?: Partial<Account>; seeded?: boolean }): LocalMigration | null {
+  if (!saved?.data || saved.account?.demo === true || saved.account?.uid || isUntouchedSeed(saved)) return null
+  const areas = Array.isArray(saved.data.areas)
+    ? saved.data.areas.filter(a => a && typeof a.id === 'string' && typeof a.name === 'string' && a.name.trim())
+    : []
+  const tasks = Array.isArray(saved.data.tasks)
+    ? saved.data.tasks.filter(t => t && typeof t.id === 'string' && !t.project && !t.guide && typeof t.title === 'string' && t.title.trim())
+    : []
+  if (!areas.length && !tasks.length) return null
+  return { areas, tasks }
+}
 
 export interface UI {
   view: View
@@ -82,7 +116,7 @@ interface Toast {
 
 const UI0 = (): UI => ({ view: 'today', projectId: null, mode: 'list', taskId: null, inboxArea: 'all', projArea: 'all', archives: false, banner: true, cal: 'month', calDay: today(), overlay: null, pro: null })
 
-function load(): { data: Data; theme: Theme; account: Account } {
+function load(): { data: Data; theme: Theme; account: Account; seeded: boolean; migration: LocalMigration | null } {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null')
     if (s?.data?.tasks) {
@@ -90,13 +124,15 @@ function load(): { data: Data; theme: Theme; account: Account } {
         data: { ...s.data, activity: Array.isArray(s.data.activity) ? s.data.activity : [] },
         theme: s.theme === 'dark' ? 'dark' : 'light',
         account: { ...ACCOUNT0, ...s.account },
+        seeded: isUntouchedSeed(s),
+        migration: extractMigration(s),
       }
     }
   } catch {
     /* storage unavailable or corrupt: start from demo data */
   }
   const dark = typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
-  return { data: seed(), theme: dark ? 'dark' : 'light', account: ACCOUNT0 }
+  return { data: seed(), theme: dark ? 'dark' : 'light', account: ACCOUNT0, seeded: true, migration: null }
 }
 
 const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
@@ -231,10 +267,16 @@ function useStoreValue() {
   const [authBusy, setAuthBusy] = useState(false)
   const [authStatus, setAuthStatus] = useState('')
   const [authError, setAuthError] = useState('')
+  const [pendingMigration, setPendingMigration] = useState<LocalMigration | null>(null)
+  const [migrating, setMigrating] = useState(false)
+  const [migrationError, setMigrationError] = useState('')
 
   const timer = useRef<number>(undefined)
   const handledUid = useRef<string | null>(null)
   const cloudAreaOrdersRef = useRef<Map<string, number>>(new Map())
+  const localBackupRef = useRef<LocalMigration | null>(initial.migration)
+  const seededRef = useRef(initial.seeded)
+  const migratingRef = useRef(false)
 
   const cloudActive = Boolean(uid && account.loggedIn && !account.demo)
   const cloudUidRef = useRef<string | null>(null)
@@ -256,6 +298,8 @@ function useStoreValue() {
   localDataRef.current = localData
   const cloudTasksRef = useRef(cloudTasks)
   cloudTasksRef.current = cloudTasks
+  const cloudAreasRef = useRef(cloudAreas)
+  cloudAreasRef.current = cloudAreas
   const accountRef = useRef(account)
   accountRef.current = account
 
@@ -264,7 +308,8 @@ function useStoreValue() {
     document.documentElement.dataset.accent = account.accent
     try {
       // Persist only localData; cloud areas and loose tasks live in Firestore's persistentLocalCache.
-      localStorage.setItem(KEY, JSON.stringify({ data: localData, theme, account }))
+      // Preserve the seeded marker while untouched so a fresh browser never triggers local migration.
+      localStorage.setItem(KEY, JSON.stringify({ data: localData, theme, account, ...(seededRef.current ? { seeded: true } : {}) }))
     } catch {
       /* private mode: keep working in memory */
     }
@@ -914,6 +959,9 @@ function useStoreValue() {
   const startDemo = useCallback(() => {
     // Leaving a real account for the demo loads fresh sample data without touching Firebase.
     if (!account.demo) setLocalData(seed())
+    seededRef.current = true
+    localBackupRef.current = null
+    setPendingMigration(null)
     setNeedsAreas(false)
     setAuthError('')
     setAuthBusy(false)
@@ -986,12 +1034,21 @@ function useStoreValue() {
       cloudAreaOrdersRef.current = orders
       setCloudAreas(areas)
       setCloudTasks(guides)
-      setLocalData(EMPTY_DATA)
+      seededRef.current = false
+      // Preserve non-demo local projects on first login; wipe untouched demo seed data.
+      setLocalData(d => (localBackupRef.current
+        ? { ...d, areas: [], tasks: d.tasks.filter(t => t.project != null) }
+        : EMPTY_DATA))
       setAccountState(a => ({ ...a, uid: curUid, loggedIn: true, demo: false, onboarding: true, checkedAreas: false }))
       setNeedsAreas(false)
       setAuthBusy(false)
       setAuthStatus('')
       setUIState(UI0())
+      // Offer one-time migration after first login when non-demo local data existed on this device.
+      if (localBackupRef.current) {
+        setMigrationError('')
+        setPendingMigration(localBackupRef.current)
+      }
       say(`Selamat datang, ${accountRef.current.name}!`)
     } catch {
       setAuthBusy(false)
@@ -999,6 +1056,95 @@ function useStoreValue() {
       setAuthError('Gagal menyimpan area awal. Coba lagi.')
     }
   }, [say, uid])
+
+  const skipMigration = useCallback(() => {
+    if (migratingRef.current) return
+    localBackupRef.current = null
+    setPendingMigration(null)
+    setMigrationError('')
+  }, [])
+
+  /** Move pre-login local areas and loose tasks to Firestore in <=500-write batches; idempotent against double clicks. */
+  const migrateLocalData = useCallback(async () => {
+    if (migratingRef.current) return
+    const curUid = cloudUidRef.current ?? auth.currentUser?.uid
+    const backup = pendingMigration ?? localBackupRef.current
+    if (!curUid || !backup) return
+
+    migratingRef.current = true
+    setMigrating(true)
+    setMigrationError('')
+
+    try {
+      const existingAreas = cloudAreasRef.current
+      const existingAreaIds = new Set(existingAreas.map(a => a.id))
+      const existingAreaByName = new Map(existingAreas.map(a => [a.name.trim().toLowerCase(), a.id]))
+      const areaIdMap = new Map<string, string>()
+      let nextOrder = Array.from(cloudAreaOrdersRef.current.values()).reduce((m, v) => Math.max(m, v), -1) + 1
+
+      const ops: ((batch: ReturnType<typeof writeBatch>) => void)[] = []
+      let movedAreas = 0
+
+      backup.areas.forEach((a, idx) => {
+        const cleanName = a.name.trim().slice(0, 60)
+        if (!cleanName) return
+        const byName = existingAreaByName.get(cleanName.toLowerCase())
+        if (existingAreaIds.has(a.id)) {
+          areaIdMap.set(a.id, a.id)
+          return
+        }
+        if (byName) {
+          areaIdMap.set(a.id, byName)
+          return
+        }
+        const docId = safeDocId(a.id, `loc_area_${idx}`)
+        areaIdMap.set(a.id, docId)
+        existingAreaIds.add(docId)
+        existingAreaByName.set(cleanName.toLowerCase(), docId)
+        const order = nextOrder++
+        const color = a.color?.trim().slice(0, 60) || AREA_COLORS[order % AREA_COLORS.length]
+        movedAreas++
+        ops.push(batch => batch.set(doc(db, 'users', curUid, 'areas', docId), { name: cleanName, color, order }))
+      })
+
+      const existingTaskIds = new Set(cloudTasksRef.current.map(t => t.id))
+      const pro = isProRef.current
+      let movedTasks = 0
+
+      backup.tasks.forEach((t, idx) => {
+        if (t.project || t.guide) return
+        // Keep deterministic IDs so repeated calls never create duplicate docs, and avoid colliding with guide g1..g4.
+        const rawId = safeDocId(t.id, `loc_task_${idx}`)
+        const docId = /^g\d+$/.test(rawId) ? `mig_${rawId}` : rawId
+        if (existingTaskIds.has(docId)) return
+        existingTaskIds.add(docId)
+        const mappedArea = t.area ? (areaIdMap.get(t.area) ?? (existingAreaIds.has(t.area) ? t.area : null)) : null
+        const payload = taskToCloudDoc({ ...t, id: docId, project: null, area: mappedArea, section: null, assignee: null }, curUid, pro)
+        movedTasks++
+        ops.push(batch => batch.set(doc(db, 'users', curUid, 'tasks', docId), payload))
+      })
+
+      for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+        const batch = writeBatch(db)
+        for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch)
+        await batch.commit()
+      }
+
+      localBackupRef.current = null
+      setPendingMigration(null)
+      setMigrating(false)
+      migratingRef.current = false
+      const parts = [
+        movedAreas ? `${movedAreas} area` : '',
+        movedTasks ? `${movedTasks} tugas` : '',
+      ].filter(Boolean)
+      say(parts.length ? `${parts.join(' dan ')} dipindahkan ke akun Anda` : 'Data lokal sudah ada di akun Anda')
+    } catch {
+      setMigrating(false)
+      migratingRef.current = false
+      setMigrationError('Gagal memindahkan data lokal. Coba lagi.')
+    }
+  }, [pendingMigration, say])
 
   const signOut = useCallback(async () => {
     if (accountRef.current.demo) {
@@ -1010,6 +1156,8 @@ function useStoreValue() {
     setCloudAreas([])
     setCloudTasks([])
     cloudAreaOrdersRef.current = new Map()
+    setPendingMigration(null)
+    setMigrationError('')
     setNeedsAreas(false)
     setAuthBusy(false)
     setAuthStatus('')
@@ -1047,6 +1195,7 @@ function useStoreValue() {
   return {
     ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro,
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
+    pendingMigration, migrating, migrationError, migrateLocalData, skipMigration,
     startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say,
     updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
     renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,
