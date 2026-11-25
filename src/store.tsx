@@ -1,32 +1,27 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  GoogleAuthProvider,
-  getRedirectResult,
-  onAuthStateChanged,
-  signInWithPopup,
-  signInWithRedirect,
-  signOut as firebaseSignOut,
-} from 'firebase/auth'
-import {
-  collection,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-  writeBatch,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-  type UpdateData,
-} from 'firebase/firestore'
+import type { DocumentData, FieldValue, QueryDocumentSnapshot, UpdateData, WriteBatch } from 'firebase/firestore'
 import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS, FREE_MEMBER_QUOTA, FREE_PROJECT_QUOTA, MEMBER_POOL, PEOPLE, PRO_MEMBER_QUOTA, STATUS } from './lib/constants'
 import { addDays, diffDays, fmtDay, today } from './lib/dates'
-import { auth, db } from './lib/firebase'
 import { inToday, isOverdue, nextActiveOccurrence, parseDest, type Dest } from './lib/logic'
 import { guideTasks, seed } from './lib/seed'
 import { feedback } from './lib/feedback'
 import type { Activity, Area, Data, ISODate, Priority, Project, Recurrence, Status, Task } from './lib/types'
+
+type FirebaseMod = typeof import('./lib/firebase')
+
+let fbPromise: Promise<FirebaseMod> | null = null
+const loadFirebase = (): Promise<FirebaseMod> => (fbPromise ??= import('./lib/firebase'))
+
+const REDIRECT_FLAG = 'taskflow-auth-redirect'
+const hasRedirectFlag = () => {
+  try { return sessionStorage.getItem(REDIRECT_FLAG) === '1' } catch { return false }
+}
+const setRedirectFlag = (on: boolean) => {
+  try {
+    if (on) sessionStorage.setItem(REDIRECT_FLAG, '1')
+    else sessionStorage.removeItem(REDIRECT_FLAG)
+  } catch { /* ignore private mode */ }
+}
 
 const KEY = 'taskflow-v1'
 
@@ -245,7 +240,7 @@ function docToTask(snap: QueryDocumentSnapshot): { task: Task; createdAtMs: numb
 }
 
 /** Build a Firestore-rules-compliant payload for creating/restoring a loose task document. */
-function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean): Record<string, unknown> {
+function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean, serverTs: () => FieldValue): Record<string, unknown> {
   const title = t.title.trim().slice(0, 300) || 'Tanpa judul'
   const dur = pro && typeof t.dur === 'number' && t.dur > 0 ? Math.min(1440, Math.round(t.dur)) : null
   const rec = t.rec && (pro || t.rec === 'daily' || t.rec === 'weekly') ? t.rec : null
@@ -264,9 +259,9 @@ function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean): Record<string,
     rec,
     notes: (t.notes ?? '').slice(0, 10000),
     createdBy: ownerUid,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    completedAt: t.status === 'done' ? serverTimestamp() : null,
+    createdAt: serverTs(),
+    updatedAt: serverTs(),
+    completedAt: t.status === 'done' ? serverTs() : null,
   }
   if (t.rems !== undefined) {
     payload.rems = t.rems.filter(k => VALID_REMS.includes(k)).slice(0, pro ? 6 : 1)
@@ -278,7 +273,7 @@ function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean): Record<string,
 }
 
 /** Map a partial Task update to Firestore fields; returns null when nothing valid should be sent yet. */
-function taskPatchToCloud(patch: Partial<Task>): UpdateData<DocumentData> | null {
+function taskPatchToCloud(patch: Partial<Task>, serverTs: () => FieldValue): UpdateData<DocumentData> | null {
   const out: UpdateData<DocumentData> = {}
   if (patch.title !== undefined) {
     const trimmed = patch.title.trim().slice(0, 300)
@@ -290,7 +285,7 @@ function taskPatchToCloud(patch: Partial<Task>): UpdateData<DocumentData> | null
   if (patch.assignee !== undefined) out.assignee = patch.assignee
   if (patch.status !== undefined) {
     out.status = patch.status
-    out.completedAt = patch.status === 'done' ? serverTimestamp() : null
+    out.completedAt = patch.status === 'done' ? serverTs() : null
   }
   if (patch.prio !== undefined) out.prio = patch.prio
   if (patch.start !== undefined) out.start = patch.start
@@ -302,7 +297,7 @@ function taskPatchToCloud(patch: Partial<Task>): UpdateData<DocumentData> | null
   if (patch.rems !== undefined) out.rems = patch.rems.filter(k => VALID_REMS.includes(k))
   if (patch.guide !== undefined) out.guide = patch.guide
   if (!Object.keys(out).length) return null
-  out.updatedAt = serverTimestamp()
+  out.updatedAt = serverTs()
   return out
 }
 
@@ -339,9 +334,11 @@ function useStoreValue() {
   const [pendingMigration, setPendingMigration] = useState<LocalMigration | null>(null)
   const [migrating, setMigrating] = useState(false)
   const [migrationError, setMigrationError] = useState('')
+  const [firebaseRequested, setFirebaseRequested] = useState(hasRedirectFlag)
 
   const timer = useRef<number>(undefined)
   const handledUid = useRef<string | null>(null)
+  const fbRef = useRef<FirebaseMod | null>(null)
   const cloudAreaOrdersRef = useRef<Map<string, number>>(new Map())
   const localBackupRef = useRef<LocalMigration | null>(initial.migration)
   const rootDataRef = useRef<Data>(initial.rootData)
@@ -409,11 +406,15 @@ function useStoreValue() {
     persistLocal(localData, theme, account)
   }, [localData, theme, account, persistLocal])
 
-  // Keep Mode Demo completely local; only listen to Firebase Auth outside Demo Mode.
+  // Keep Mode Demo and first-visit sign-in completely free of Firebase downloads;
+  // only dynamically import Firebase when a saved session, redirect return, or Google click needs it.
+  const shouldLoadFirebase = !account.demo && (Boolean(account.uid) || firebaseRequested)
+
   useEffect(() => {
-    if (account.demo) return
+    if (!shouldLoadFirebase || account.demo) return
 
     let active = true
+    let unsubAuth: (() => void) | null = null
     let unsubProfile: (() => void) | null = null
     let unsubAreaGate: (() => void) | null = null
     let waitTimer: number | undefined
@@ -426,169 +427,182 @@ function useStoreValue() {
       window.clearTimeout(waitTimer)
     }
 
-    // Surface errors from signInWithRedirect fallback if returning from a redirect flow.
-    getRedirectResult(auth).catch(err => {
-      if (!active) return
-      setAuthBusy(false)
-      setAuthStatus('')
-      setAuthError(authErrMsg(err))
-    })
-
-    const unsubAuth = onAuthStateChanged(auth, fbUser => {
+    void loadFirebase().then(fb => {
       if (!active || accountRef.current.demo) return
-      clearProfileWatch()
+      fbRef.current = fb
 
-      if (!fbUser) {
-        handledUid.current = null
-        setUid(null)
-        setCloudAreas([])
-        setCloudTasks([])
-        cloudAreaOrdersRef.current = new Map()
-        setNeedsAreas(false)
-        setAuthBusy(false)
-        setAuthStatus('')
-        if (accountRef.current.loggedIn && !accountRef.current.demo) {
-          setAccountState(a => ({ ...a, loggedIn: false }))
-        }
-        return
-      }
+      // Surface errors from signInWithRedirect fallback if returning from a redirect flow.
+      fb.getRedirectResult(fb.auth)
+        .finally(() => setRedirectFlag(false))
+        .catch(err => {
+          if (!active) return
+          setAuthBusy(false)
+          setAuthStatus('')
+          setAuthError(authErrMsg(err))
+        })
 
-      setUid(fbUser.uid)
-      setAuthError('')
-      if (!accountRef.current.loggedIn) {
-        setAuthBusy(true)
-        setAuthStatus('Menyiapkan akun…')
-      }
+      unsubAuth = fb.onAuthStateChanged(fb.auth, fbUser => {
+        if (!active || accountRef.current.demo) return
+        clearProfileWatch()
 
-      // Wait for onUserCreated Cloud Function to materialize users/{uid} on first login.
-      waitTimer = window.setTimeout(() => {
-        if (!active || handledUid.current === fbUser.uid) return
-        setAuthBusy(false)
-        setAuthStatus('')
-        setAuthError('Profil akun belum siap. Coba lagi sebentar.')
-      }, 12000)
-
-      unsubProfile = onSnapshot(
-        doc(db, 'users', fbUser.uid),
-        snap => {
-          if (!active || !snap.exists()) return
-          window.clearTimeout(waitTimer)
-          setAuthError('')
-
-          const p = snap.data()
-          const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : (fbUser.displayName?.trim() || 'Anda')
-          // plan is read-only from Firestore and is the source of truth for s.isPro on signed-in accounts.
-          const plan: 'free' | 'pro' = p.plan === 'pro' ? 'pro' : 'free'
-
-          if (handledUid.current === fbUser.uid) {
-            setAccountState(a => ({
-              ...a,
-              name,
-              plan,
-              accent: plan === 'pro' ? a.accent : 'indigo',
-            }))
-            return
+        if (!fbUser) {
+          handledUid.current = null
+          setUid(null)
+          setCloudAreas([])
+          setCloudTasks([])
+          cloudAreaOrdersRef.current = new Map()
+          setNeedsAreas(false)
+          setAuthBusy(false)
+          setAuthStatus('')
+          if ((accountRef.current.loggedIn || accountRef.current.uid) && !accountRef.current.demo) {
+            setAccountState(a => ({ ...a, uid: undefined, loggedIn: false }))
           }
-          handledUid.current = fbUser.uid
+          return
+        }
 
-          // Determine first login vs returning user via onSnapshot so offline IndexedDB cache also works on reload.
-          unsubAreaGate = onSnapshot(
-            collection(db, 'users', fbUser.uid, 'areas'),
-            areasSnap => {
-              if (!active) return
-              // Wait for server confirmation when an empty snapshot came only from a cold local cache.
-              if (areasSnap.empty && areasSnap.metadata.fromCache) return
-              unsubAreaGate?.()
-              unsubAreaGate = null
+        setUid(fbUser.uid)
+        setAuthError('')
+        if (!accountRef.current.loggedIn) {
+          setAuthBusy(true)
+          setAuthStatus('Menyiapkan akun…')
+        }
 
-              if (areasSnap.empty) {
+        // Wait for onUserCreated Cloud Function to materialize users/{uid} on first login.
+        waitTimer = window.setTimeout(() => {
+          if (!active || handledUid.current === fbUser.uid) return
+          setAuthBusy(false)
+          setAuthStatus('')
+          setAuthError('Profil akun belum siap. Coba lagi sebentar.')
+        }, 12000)
+
+        unsubProfile = fb.onSnapshot(
+          fb.doc(fb.db, 'users', fbUser.uid),
+          snap => {
+            if (!active || !snap.exists()) return
+            window.clearTimeout(waitTimer)
+            setAuthError('')
+
+            const p = snap.data()
+            const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : (fbUser.displayName?.trim() || 'Anda')
+            // plan is read-only from Firestore and is the source of truth for s.isPro on signed-in accounts.
+            const plan: 'free' | 'pro' = p.plan === 'pro' ? 'pro' : 'free'
+
+            if (handledUid.current === fbUser.uid) {
+              setAccountState(a => ({
+                ...a,
+                name,
+                plan,
+                accent: plan === 'pro' ? a.accent : 'indigo',
+              }))
+              return
+            }
+            handledUid.current = fbUser.uid
+
+            // Determine first login vs returning user via onSnapshot so offline IndexedDB cache also works on reload.
+            unsubAreaGate = fb.onSnapshot(
+              fb.collection(fb.db, 'users', fbUser.uid, 'areas'),
+              areasSnap => {
+                if (!active) return
+                // Wait for server confirmation when an empty snapshot came only from a cold local cache.
+                if (areasSnap.empty && areasSnap.metadata.fromCache) return
+                unsubAreaGate?.()
+                unsubAreaGate = null
+
+                if (areasSnap.empty) {
+                  setAccountState(a => ({
+                    ...a,
+                    uid: fbUser.uid,
+                    loggedIn: false,
+                    demo: false,
+                    name,
+                    plan,
+                    accent: plan === 'pro' ? a.accent : 'indigo',
+                    onboarding: true,
+                    checkedAreas: false,
+                  }))
+                  setNeedsAreas(true)
+                  setAuthBusy(false)
+                  setAuthStatus('')
+                  return
+                }
+
+                // Restore this user's own per-uid local projects without leaking demo seed() or another user's projects.
+                const userLocal = byUidRef.current[fbUser.uid] ?? EMPTY_DATA
+                const orders = new Map<string, number>()
+                const initialAreas = areasSnap.docs
+                  .map(d => {
+                    const x = d.data()
+                    const order = typeof x.order === 'number' ? x.order : 999
+                    orders.set(d.id, order)
+                    return {
+                      id: d.id,
+                      name: typeof x.name === 'string' ? x.name : d.id,
+                      color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
+                      order,
+                    }
+                  })
+                  .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+                cloudAreaOrdersRef.current = orders
+                setCloudAreas(initialAreas.map(({ id, name: n, color }) => ({ id, name: n, color })))
+                setLocalData(userLocal)
                 setAccountState(a => ({
                   ...a,
                   uid: fbUser.uid,
-                  loggedIn: false,
+                  loggedIn: true,
                   demo: false,
                   name,
                   plan,
                   accent: plan === 'pro' ? a.accent : 'indigo',
-                  onboarding: true,
-                  checkedAreas: false,
+                  onboarding: typeof p.onboarding === 'boolean' ? p.onboarding : a.onboarding,
+                  checkedAreas: typeof p.checkedAreas === 'boolean' ? p.checkedAreas : a.checkedAreas,
                 }))
-                setNeedsAreas(true)
+                setNeedsAreas(false)
                 setAuthBusy(false)
                 setAuthStatus('')
-                return
-              }
-
-              // Restore this user's own per-uid local projects without leaking demo seed() or another user's projects.
-              const userLocal = byUidRef.current[fbUser.uid] ?? EMPTY_DATA
-              const orders = new Map<string, number>()
-              const initialAreas = areasSnap.docs
-                .map(d => {
-                  const x = d.data()
-                  const order = typeof x.order === 'number' ? x.order : 999
-                  orders.set(d.id, order)
-                  return {
-                    id: d.id,
-                    name: typeof x.name === 'string' ? x.name : d.id,
-                    color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
-                    order,
-                  }
-                })
-                .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-              cloudAreaOrdersRef.current = orders
-              setCloudAreas(initialAreas.map(({ id, name: n, color }) => ({ id, name: n, color })))
-              setLocalData(userLocal)
-              setAccountState(a => ({
-                ...a,
-                uid: fbUser.uid,
-                loggedIn: true,
-                demo: false,
-                name,
-                plan,
-                accent: plan === 'pro' ? a.accent : 'indigo',
-                onboarding: typeof p.onboarding === 'boolean' ? p.onboarding : a.onboarding,
-                checkedAreas: typeof p.checkedAreas === 'boolean' ? p.checkedAreas : a.checkedAreas,
-              }))
-              setNeedsAreas(false)
-              setAuthBusy(false)
-              setAuthStatus('')
-              // Offer migration to returning users too when pre-backend non-demo local data exists on this browser.
-              if (localBackupRef.current) {
-                setMigrationError('')
-                setPendingMigration(localBackupRef.current)
-              }
-            },
-            () => {
-              if (!active) return
-              handledUid.current = null
-              setAuthBusy(false)
-              setAuthStatus('')
-              setAuthError('Gagal memuat data akun. Coba lagi.')
-            },
-          )
-        },
-        () => {
-          if (!active) return
-          window.clearTimeout(waitTimer)
-          setAuthBusy(false)
-          setAuthStatus('')
-          setAuthError('Gagal memuat profil akun. Coba lagi.')
-        },
-      )
+                // Offer migration to returning users too when pre-backend non-demo local data exists on this browser.
+                if (localBackupRef.current) {
+                  setMigrationError('')
+                  setPendingMigration(localBackupRef.current)
+                }
+              },
+              () => {
+                if (!active) return
+                handledUid.current = null
+                setAuthBusy(false)
+                setAuthStatus('')
+                setAuthError('Gagal memuat data akun. Coba lagi.')
+              },
+            )
+          },
+          () => {
+            if (!active) return
+            window.clearTimeout(waitTimer)
+            setAuthBusy(false)
+            setAuthStatus('')
+            setAuthError('Gagal memuat profil akun. Coba lagi.')
+          },
+        )
+      })
+    }).catch(() => {
+      if (!active) return
+      setAuthBusy(false)
+      setAuthStatus('')
+      setAuthError('Gagal memuat layanan akun. Periksa koneksi internet lalu coba lagi.')
     })
 
     return () => {
       active = false
       clearProfileWatch()
-      unsubAuth()
+      unsubAuth?.()
     }
-  }, [account.demo])
+  }, [shouldLoadFirebase, account.demo])
 
   // Subscribe to cloud areas and loose tasks while signed in to a real account.
   useEffect(() => {
-    if (!cloudActive || !uid) return
+    const fb = fbRef.current
+    if (!cloudActive || !uid || !fb) return
 
-    const unsubAreas = onSnapshot(collection(db, 'users', uid, 'areas'), snap => {
+    const unsubAreas = fb.onSnapshot(fb.collection(fb.db, 'users', uid, 'areas'), snap => {
       const orders = new Map<string, number>()
       const rows = snap.docs
         .map(d => {
@@ -607,7 +621,7 @@ function useStoreValue() {
       setCloudAreas(rows.map(({ id, name, color }) => ({ id, name, color })))
     })
 
-    const unsubTasks = onSnapshot(collection(db, 'users', uid, 'tasks'), snap => {
+    const unsubTasks = fb.onSnapshot(fb.collection(fb.db, 'users', uid, 'tasks'), snap => {
       setCloudTasks(sortCloudTasks(snap.docs.map(docToTask)))
     })
 
@@ -666,13 +680,19 @@ function useStoreValue() {
     if (!entry) return
     window.clearTimeout(entry.timer)
     pendingWritesRef.current.delete(key)
+    const fb = fbRef.current
+    if (!fb) {
+      if (entry.kind === 'task') clearDraftTask(entry.id)
+      else clearDraftArea(entry.id)
+      return
+    }
 
     if (entry.kind === 'task') {
-      const cloudPatch = taskPatchToCloud(entry.patch)
+      const cloudPatch = taskPatchToCloud(entry.patch, fb.serverTimestamp)
       if (cloudPatch) {
         // Apply optimistically to cloudTasks too so clearing the draft never flashes stale text.
         setCloudTasks(list => list.map(t => (t.id === entry.id ? { ...t, ...entry.patch } : t)))
-        runCloud(updateDoc(doc(db, 'users', entry.uid, 'tasks', entry.id), cloudPatch))
+        runCloud(fb.updateDoc(fb.doc(fb.db, 'users', entry.uid, 'tasks', entry.id), cloudPatch))
       }
       clearDraftTask(entry.id)
       return
@@ -685,7 +705,7 @@ function useStoreValue() {
     }
     if (Object.keys(areaPatch).length) {
       setCloudAreas(list => list.map(a => (a.id === entry.id ? { ...a, ...entry.patch } : a)))
-      runCloud(updateDoc(doc(db, 'users', entry.uid, 'areas', entry.id), areaPatch))
+      runCloud(fb.updateDoc(fb.doc(fb.db, 'users', entry.uid, 'areas', entry.id), areaPatch))
     }
     clearDraftArea(entry.id)
   }, [clearDraftArea, clearDraftTask, runCloud])
@@ -743,8 +763,9 @@ function useStoreValue() {
 
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
     const curUid = cloudUidRef.current
+    const fb = fbRef.current
     const t0 = dataRef.current.tasks.find(x => x.id === id)
-    if (curUid && t0 && !t0.project) {
+    if (curUid && fb && t0 && !t0.project) {
       const textPatch: Partial<Task> = {}
       const immediatePatch: Partial<Task> = {}
       for (const [k, v] of Object.entries(patch) as [keyof Task, Task[keyof Task]][]) {
@@ -761,9 +782,9 @@ function useStoreValue() {
         const pending = pendingWritesRef.current.get(key)
         const combined = pending ? { ...pending.patch, ...patch } : patch
         if (pending) cancelPendingWrite(key)
-        const cloudPatch = taskPatchToCloud(combined)
+        const cloudPatch = taskPatchToCloud(combined, fb.serverTimestamp)
         if (cloudPatch) {
-          runCloud(updateDoc(doc(db, 'users', curUid, 'tasks', id), cloudPatch))
+          runCloud(fb.updateDoc(fb.doc(fb.db, 'users', curUid, 'tasks', id), cloudPatch))
         }
         return
       }
@@ -794,12 +815,13 @@ function useStoreValue() {
     if (t.rec && t.status !== 'done') {
       const n = nextActiveOccurrence(t)
       const curUid = cloudUidRef.current
-      if (curUid && !t.project) {
-        const ref = doc(db, 'users', curUid, 'tasks', id)
+      const fb = fbRef.current
+      if (curUid && fb && !t.project) {
+        const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
         undoableCloud(
           `Selesai. Diulang ke ${fmtDay(n)}`,
-          () => updateDoc(ref, { due: n, start: null, status: 'todo', updatedAt: serverTimestamp(), completedAt: null }),
-          () => updateDoc(ref, { due: t.due, start: t.start, status: t.status, updatedAt: serverTimestamp(), completedAt: null }),
+          () => fb.updateDoc(ref, { due: n, start: null, status: 'todo', updatedAt: fb.serverTimestamp(), completedAt: null }),
+          () => fb.updateDoc(ref, { due: t.due, start: t.start, status: t.status, updatedAt: fb.serverTimestamp(), completedAt: null }),
         )
         return
       }
@@ -818,13 +840,14 @@ function useStoreValue() {
     if (status === 'done' && t0?.status !== 'done') feedback('done', accountRef.current)
     if (withUndo) {
       const curUid = cloudUidRef.current
-      if (curUid && t0 && !t0.project) {
-        const ref = doc(db, 'users', curUid, 'tasks', id)
+      const fb = fbRef.current
+      if (curUid && fb && t0 && !t0.project) {
+        const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
         const prev = t0.status
         undoableCloud(
           `Dipindah ke ${STATUS[status]}`,
-          () => updateDoc(ref, { status, updatedAt: serverTimestamp(), completedAt: status === 'done' ? serverTimestamp() : null }),
-          () => updateDoc(ref, { status: prev, updatedAt: serverTimestamp(), completedAt: prev === 'done' ? serverTimestamp() : null }),
+          () => fb.updateDoc(ref, { status, updatedAt: fb.serverTimestamp(), completedAt: status === 'done' ? fb.serverTimestamp() : null }),
+          () => fb.updateDoc(ref, { status: prev, updatedAt: fb.serverTimestamp(), completedAt: prev === 'done' ? fb.serverTimestamp() : null }),
         )
         return
       }
@@ -840,17 +863,18 @@ function useStoreValue() {
 
   const deleteTask = useCallback((id: string) => {
     const curUid = cloudUidRef.current
+    const fb = fbRef.current
     const t0 = dataRef.current.tasks.find(x => x.id === id)
-    if (curUid && t0 && !t0.project) {
+    if (curUid && fb && t0 && !t0.project) {
       // Discard any queued text edit before deleting so a late debounce cannot write to a deleted doc.
       cancelPendingWrite(`task:${id}`)
       setUIState(u => ({ ...u, taskId: null }))
-      const ref = doc(db, 'users', curUid, 'tasks', id)
-      const restore = taskToCloudDoc(t0, curUid, isProRef.current)
+      const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
+      const restore = taskToCloudDoc(t0, curUid, isProRef.current, fb.serverTimestamp)
       undoableCloud(
         'Tugas dihapus',
-        () => deleteDoc(ref),
-        () => setDoc(ref, restore),
+        () => fb.deleteDoc(ref),
+        () => fb.setDoc(ref, restore),
       )
       return
     }
@@ -860,20 +884,21 @@ function useStoreValue() {
 
   const clearGuides = useCallback(() => {
     const curUid = cloudUidRef.current
-    if (curUid) {
+    const fb = fbRef.current
+    if (curUid && fb) {
       const guides = cloudTasksRef.current.filter(t => t.guide)
       if (!guides.length) return
       const pro = isProRef.current
       undoableCloud(
         'Tugas panduan dihapus',
         () => {
-          const batch = writeBatch(db)
-          guides.forEach(t => batch.delete(doc(db, 'users', curUid, 'tasks', t.id)))
+          const batch = fb.writeBatch(fb.db)
+          guides.forEach(t => batch.delete(fb.doc(fb.db, 'users', curUid, 'tasks', t.id)))
           return batch.commit()
         },
         () => {
-          const batch = writeBatch(db)
-          guides.forEach(t => batch.set(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, pro)))
+          const batch = fb.writeBatch(fb.db)
+          guides.forEach(t => batch.set(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, pro, fb.serverTimestamp)))
           return batch.commit()
         },
       )
@@ -887,7 +912,8 @@ function useStoreValue() {
   const moveAllOverdue = useCallback(() => {
     const t0 = today()
     const curUid = cloudUidRef.current
-    if (curUid) {
+    const fb = fbRef.current
+    if (curUid && fb) {
       const cloudOverdue = cloudTasksRef.current.filter(t => isOverdue(t, t0))
       const localOverdue = localDataRef.current.tasks.filter(t => t.project != null && isOverdue(t, t0))
       const total = cloudOverdue.length + localOverdue.length
@@ -905,13 +931,13 @@ function useStoreValue() {
       undoableCloud(
         `${total} tugas digeser ke Hari Ini`,
         () => {
-          const batch = writeBatch(db)
-          cloudOverdue.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { due: t0, start: null, updatedAt: serverTimestamp() }))
+          const batch = fb.writeBatch(fb.db)
+          cloudOverdue.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { due: t0, start: null, updatedAt: fb.serverTimestamp() }))
           return batch.commit()
         },
         () => {
-          const batch = writeBatch(db)
-          cloudOverdue.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { due: t.due, start: t.start, updatedAt: serverTimestamp() }))
+          const batch = fb.writeBatch(fb.db)
+          cloudOverdue.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { due: t.due, start: t.start, updatedAt: fb.serverTimestamp() }))
           return batch.commit()
         },
         mutateLocal,
@@ -931,23 +957,24 @@ function useStoreValue() {
     const np = d.project ? dataRef.current.projects.find(p => p.id === d.project) : null
     const assignee = np ? (t.assignee && np.members.includes(t.assignee) ? t.assignee : 'me') : null
     const curUid = cloudUidRef.current
+    const fb = fbRef.current
 
     // In Phase 1, loose tasks live in Firestore and project tasks remain local; crossing the boundary moves the record.
-    if (curUid && !t.project && d.project) {
+    if (curUid && fb && !t.project && d.project) {
       cancelPendingWrite(`task:${t.id}`)
       const moved: Task = { ...t, project: d.project, area: null, section: d.section, assignee }
-      runCloud(deleteDoc(doc(db, 'users', curUid, 'tasks', t.id)))
+      runCloud(fb.deleteDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id)))
       setLocalData(x => ({ ...x, tasks: [moved, ...x.tasks.filter(k => k.id !== t.id)] }))
       return
     }
-    if (curUid && t.project && !d.project) {
+    if (curUid && fb && t.project && !d.project) {
       const moved: Task = { ...t, project: null, area: d.area, section: null, assignee: null }
       setLocalData(x => ({ ...x, tasks: x.tasks.filter(k => k.id !== t.id) }))
-      runCloud(setDoc(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(moved, curUid, isProRef.current)))
+      runCloud(fb.setDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(moved, curUid, isProRef.current, fb.serverTimestamp)))
       return
     }
     updateTask(t.id, { project: d.project, area: d.area, section: d.section, assignee })
-  }, [runCloud, updateTask])
+  }, [cancelPendingWrite, runCloud, updateTask])
 
   const addTask = useCallback((input: { title: string; dest: Dest; due: ISODate | null; prio: Priority; pic: string | null }) => {
     const d = parseDest(input.dest)
@@ -958,8 +985,9 @@ function useStoreValue() {
       status: 'todo', prio: input.prio, start: null, due: input.due, time: null, notes: '', rec: null, dur: null,
     }
     const curUid = cloudUidRef.current
-    if (curUid && !d.project) {
-      runCloud(setDoc(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, isProRef.current)))
+    const fb = fbRef.current
+    if (curUid && fb && !d.project) {
+      runCloud(fb.setDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, isProRef.current, fb.serverTimestamp)))
       return t
     }
     setLocalData(x => ({
@@ -978,14 +1006,15 @@ function useStoreValue() {
     if (time !== undefined) patch.time = time
     const suffix = patch.time ? ' · ' + patch.time : time === null && t.time ? ' · tanpa jam' : ''
     const curUid = cloudUidRef.current
-    if (curUid && !t.project) {
-      const ref = doc(db, 'users', curUid, 'tasks', id)
-      const prev: UpdateData<DocumentData> = { due: t.due, start: t.start, updatedAt: serverTimestamp() }
+    const fb = fbRef.current
+    if (curUid && fb && !t.project) {
+      const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
+      const prev: UpdateData<DocumentData> = { due: t.due, start: t.start, updatedAt: fb.serverTimestamp() }
       if (time !== undefined) prev.time = t.time
       undoableCloud(
         `Dipindah ke ${fmtDay(day)}${suffix}`,
-        () => updateDoc(ref, { ...patch, updatedAt: serverTimestamp() }),
-        () => updateDoc(ref, prev),
+        () => fb.updateDoc(ref, { ...patch, updatedAt: fb.serverTimestamp() }),
+        () => fb.updateDoc(ref, prev),
       )
       return
     }
@@ -1078,7 +1107,8 @@ function useStoreValue() {
   /* ----- Kelola area ----- */
   const updateArea = useCallback((id: string, patch: Partial<Area>) => {
     const curUid = cloudUidRef.current
-    if (curUid) {
+    const fb = fbRef.current
+    if (curUid && fb) {
       const key = `area:${id}`
       if (patch.color !== undefined) {
         const pending = pendingWritesRef.current.get(key)
@@ -1094,7 +1124,7 @@ function useStoreValue() {
           ...d,
           projects: d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)),
         }))
-        runCloud(updateDoc(doc(db, 'users', curUid, 'areas', id), cloudPatch))
+        runCloud(fb.updateDoc(fb.doc(fb.db, 'users', curUid, 'areas', id), cloudPatch))
         return
       }
       if (patch.name !== undefined) {
@@ -1119,13 +1149,14 @@ function useStoreValue() {
     const trimmed = name.trim().slice(0, 60)
     if (!trimmed) return
     const curUid = cloudUidRef.current
-    if (curUid) {
+    const fb = fbRef.current
+    if (curUid && fb) {
       const curAreas = dataRef.current.areas
       const used = curAreas.map(a => a.color)
       const color = AREA_COLORS.find(c => !used.includes(c)) ?? AREA_COLORS[curAreas.length % AREA_COLORS.length]
       const maxOrder = Array.from(cloudAreaOrdersRef.current.values()).reduce((m, v) => Math.max(m, v), -1)
       const id = 'a' + Date.now()
-      runCloud(setDoc(doc(db, 'users', curUid, 'areas', id), { name: trimmed, color, order: maxOrder + 1 }))
+      runCloud(fb.setDoc(fb.doc(fb.db, 'users', curUid, 'areas', id), { name: trimmed, color, order: maxOrder + 1 }))
       return
     }
     setLocalData(d => {
@@ -1138,23 +1169,24 @@ function useStoreValue() {
   const deleteArea = useCallback((a: Area) => {
     setUIState(u => ({ ...u, inboxArea: 'all', projArea: 'all' }))
     const curUid = cloudUidRef.current
-    if (curUid) {
+    const fb = fbRef.current
+    if (curUid && fb) {
       cancelPendingWrite(`area:${a.id}`)
       const prevOrder = cloudAreaOrdersRef.current.get(a.id) ?? 0
       const affected = cloudTasksRef.current.filter(t => t.area === a.id)
-      const areaRef = doc(db, 'users', curUid, 'areas', a.id)
+      const areaRef = fb.doc(fb.db, 'users', curUid, 'areas', a.id)
       undoableCloud(
         `Area "${a.name}" dihapus`,
         () => {
-          const batch = writeBatch(db)
+          const batch = fb.writeBatch(fb.db)
           batch.delete(areaRef)
-          affected.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { area: null, updatedAt: serverTimestamp() }))
+          affected.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { area: null, updatedAt: fb.serverTimestamp() }))
           return batch.commit()
         },
         () => {
-          const batch = writeBatch(db)
+          const batch = fb.writeBatch(fb.db)
           batch.set(areaRef, { name: a.name, color: a.color, order: prevOrder })
-          affected.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { area: a.id, updatedAt: serverTimestamp() }))
+          affected.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { area: a.id, updatedAt: fb.serverTimestamp() }))
           return batch.commit()
         },
         d => ({
@@ -1170,7 +1202,7 @@ function useStoreValue() {
       tasks: d.tasks.map(t => (t.area === a.id ? { ...t, area: null } : t)),
       projects: d.projects.map(p => (p.area === a.id ? { ...p, area: null } : p)),
     }))
-  }, [undoable, undoableCloud])
+  }, [cancelPendingWrite, undoable, undoableCloud])
 
   const createProject = useCallback((name: string, area: string | null, due: ISODate) => {
     const a = dataRef.current.areas.find(x => x.id === area)
@@ -1203,32 +1235,45 @@ function useStoreValue() {
     setAuthError('')
     setAuthBusy(true)
     setAuthStatus('Menghubungkan…')
-    const provider = new GoogleAuthProvider()
-    provider.setCustomParameters({ prompt: 'select_account' })
+    setFirebaseRequested(true)
     try {
-      await signInWithPopup(auth, provider)
-    } catch (err) {
-      const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
-      // Fall back to redirect when browser blocks popups.
-      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-        try {
-          await signInWithRedirect(auth, provider)
-          return
-        } catch (redirErr) {
-          setAuthBusy(false)
-          setAuthStatus('')
-          setAuthError(authErrMsg(redirErr))
-          return
+      const fb = await loadFirebase()
+      fbRef.current = fb
+      const provider = new fb.GoogleAuthProvider()
+      provider.setCustomParameters({ prompt: 'select_account' })
+      try {
+        await fb.signInWithPopup(fb.auth, provider)
+      } catch (err) {
+        const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
+        // Fall back to redirect when browser blocks popups; mark redirect so lazy loader runs on return.
+        if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+          try {
+            setRedirectFlag(true)
+            await fb.signInWithRedirect(fb.auth, provider)
+            return
+          } catch (redirErr) {
+            setRedirectFlag(false)
+            setAuthBusy(false)
+            setAuthStatus('')
+            setAuthError(authErrMsg(redirErr))
+            return
+          }
         }
+        setAuthBusy(false)
+        setAuthStatus('')
+        setAuthError(authErrMsg(err))
       }
+    } catch {
       setAuthBusy(false)
       setAuthStatus('')
-      setAuthError(authErrMsg(err))
+      setAuthError('Gagal memuat layanan akun. Periksa koneksi internet lalu coba lagi.')
     }
   }, [])
 
   const completeSetup = useCallback(async (areaIds: string[] = DEFAULT_AREA_IDS) => {
-    const curUid = auth.currentUser?.uid ?? uid
+    const fb = fbRef.current ?? await loadFirebase()
+    fbRef.current = fb
+    const curUid = fb.auth.currentUser?.uid ?? uid
     if (!curUid) {
       setAuthError('Sesi masuk tidak ditemukan. Silakan masuk ulang.')
       return
@@ -1244,20 +1289,20 @@ function useStoreValue() {
     const guides = guideTasks()
 
     try {
-      const batch = writeBatch(db)
+      const batch = fb.writeBatch(fb.db)
       const orders = new Map<string, number>()
       areas.forEach((a, order) => {
         orders.set(a.id, order)
-        batch.set(doc(db, 'users', curUid, 'areas', a.id), {
+        batch.set(fb.doc(fb.db, 'users', curUid, 'areas', a.id), {
           name: a.name,
           color: a.color,
           order,
         })
       })
       guides.forEach(t => {
-        batch.set(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, false))
+        batch.set(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, false, fb.serverTimestamp))
       })
-      batch.update(doc(db, 'users', curUid), { onboarding: true, checkedAreas: false })
+      batch.update(fb.doc(fb.db, 'users', curUid), { onboarding: true, checkedAreas: false })
       await batch.commit()
 
       cloudAreaOrdersRef.current = orders
@@ -1300,7 +1345,9 @@ function useStoreValue() {
   /** Move pre-login local areas and loose tasks to Firestore in <=500-write batches; idempotent against double clicks. */
   const migrateLocalData = useCallback(async () => {
     if (migratingRef.current) return
-    const curUid = cloudUidRef.current ?? auth.currentUser?.uid
+    const fb = fbRef.current ?? await loadFirebase()
+    fbRef.current = fb
+    const curUid = cloudUidRef.current ?? fb.auth.currentUser?.uid
     const backup = pendingMigration ?? localBackupRef.current
     if (!curUid || !backup) return
 
@@ -1315,7 +1362,7 @@ function useStoreValue() {
       const areaIdMap = new Map<string, string>()
       let nextOrder = Array.from(cloudAreaOrdersRef.current.values()).reduce((m, v) => Math.max(m, v), -1) + 1
 
-      const ops: ((batch: ReturnType<typeof writeBatch>) => void)[] = []
+      const ops: ((batch: WriteBatch) => void)[] = []
       let movedAreas = 0
 
       backup.areas.forEach((a, idx) => {
@@ -1337,7 +1384,7 @@ function useStoreValue() {
         const order = nextOrder++
         const color = a.color?.trim().slice(0, 60) || AREA_COLORS[order % AREA_COLORS.length]
         movedAreas++
-        ops.push(batch => batch.set(doc(db, 'users', curUid, 'areas', docId), { name: cleanName, color, order }))
+        ops.push(batch => batch.set(fb.doc(fb.db, 'users', curUid, 'areas', docId), { name: cleanName, color, order }))
       })
 
       const existingTaskIds = new Set(cloudTasksRef.current.map(t => t.id))
@@ -1352,13 +1399,13 @@ function useStoreValue() {
         if (existingTaskIds.has(docId)) return
         existingTaskIds.add(docId)
         const mappedArea = t.area ? (areaIdMap.get(t.area) ?? (existingAreaIds.has(t.area) ? t.area : null)) : null
-        const payload = taskToCloudDoc({ ...t, id: docId, project: null, area: mappedArea, section: null, assignee: null }, curUid, pro)
+        const payload = taskToCloudDoc({ ...t, id: docId, project: null, area: mappedArea, section: null, assignee: null }, curUid, pro, fb.serverTimestamp)
         movedTasks++
-        ops.push(batch => batch.set(doc(db, 'users', curUid, 'tasks', docId), payload))
+        ops.push(batch => batch.set(fb.doc(fb.db, 'users', curUid, 'tasks', docId), payload))
       })
 
       for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
-        const batch = writeBatch(db)
+        const batch = fb.writeBatch(fb.db)
         for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch)
         await batch.commit()
       }
@@ -1389,6 +1436,8 @@ function useStoreValue() {
     }
     // Flush any queued debounced text edits before revoking Firebase Auth credentials.
     flushWrites()
+    setRedirectFlag(false)
+    setFirebaseRequested(false)
     handledUid.current = null
     setCloudAreas([])
     setCloudTasks([])
@@ -1404,11 +1453,12 @@ function useStoreValue() {
     setAccountState(ACCOUNT0)
     setUIState(UI0())
     try {
-      await firebaseSignOut(auth)
+      const fb = fbRef.current
+      if (fb) await fb.firebaseSignOut(fb.auth)
     } catch {
       /* keep user returned to sign-in screen even if network is down */
     }
-  }, [])
+  }, [flushWrites])
 
   const buyPro = useCallback(() => {
     if (cloudUidRef.current) {

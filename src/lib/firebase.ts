@@ -1,12 +1,46 @@
 import { getApp, getApps, initializeApp, type FirebaseOptions } from 'firebase/app';
-import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import {
+  GoogleAuthProvider,
+  connectAuthEmulator,
+  getAuth,
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut as firebaseSignOut,
+} from 'firebase/auth';
+import {
+  collection,
   connectFirestoreEmulator,
+  deleteDoc,
+  doc,
   getFirestore,
   initializeFirestore,
+  onSnapshot,
   persistentLocalCache,
   persistentMultipleTabManager,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
+
+export {
+  GoogleAuthProvider,
+  collection,
+  deleteDoc,
+  doc,
+  firebaseSignOut,
+  getRedirectResult,
+  onAuthStateChanged,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  signInWithPopup,
+  signInWithRedirect,
+  updateDoc,
+  writeBatch,
+};
 
 export const useEmulators = import.meta.env.VITE_USE_EMULATORS === 'true';
 
