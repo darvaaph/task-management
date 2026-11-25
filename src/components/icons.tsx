@@ -19,3 +19,14 @@ export const IconCalendar = ({ size = 16, sw = 2 }: P) => (
 export const IconFolder = ({ size = 16, sw = 2 }: P) => (
   <svg {...base(size, sw)}><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" /></svg>
 )
+
+/** TaskFlow mark: an open progress ring with the tick breaking out of its gap. Follows the accent colour. */
+export const LogoMark = ({ size = 20 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" className="flex-none">
+    <rect width="64" height="64" rx="15" fill="var(--accent)" />
+    <g fill="none" stroke="var(--on-accent)" strokeLinecap="round" strokeLinejoin="round">
+      <path strokeWidth="5.5" d="M47.97 26.19A17 17 0 1 1 37.81 16.03" />
+      <path strokeWidth="6" d="M22.5 31.5 29.5 38.5 50.5 12.5" />
+    </g>
+  </svg>
+)

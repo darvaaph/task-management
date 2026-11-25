@@ -5,7 +5,7 @@ import { ShareProject } from './components/Share'
 import { Search, SearchButton } from './components/Search'
 import { AccentPicker, ProBadge, ProScreen } from './components/Pro'
 import { AuthView } from './views/AuthView'
-import { IconCalendar, IconFolder, IconInbox, IconToday } from './components/icons'
+import { IconCalendar, IconFolder, IconInbox, IconToday, LogoMark } from './components/icons'
 import { DetailPanel, DetailSheet } from './components/TaskDetail'
 import { Segmented, Sheet } from './components/ui'
 import { FREE_PROJECT_QUOTA } from './lib/constants'
@@ -125,7 +125,7 @@ function Sidebar() {
   return (
     <aside className="flex w-[236px] flex-none flex-col gap-6 overflow-auto border-r border-line bg-surface px-6 py-7">
       <div className="flex items-center gap-4.5 px-4 py-1">
-        <span aria-hidden="true" className="size-10 rounded-[6px] bg-accent" />
+        <LogoMark size={22} />
         <span className="font-display text-[17px] font-semibold">TaskFlow</span>
       </div>
       <button type="button" onClick={() => s.setUI({ overlay: 'search' })} className="flex h-17 items-center justify-between rounded-[8px] border-0 bg-surface2 px-5 text-left text-[13px] text-fg3">

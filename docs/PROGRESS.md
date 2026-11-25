@@ -25,13 +25,14 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Tugas panduan di Inbox untuk akun baru + "Hapus semua panduan" dengan Urungkan | `lib/seed.ts` (`guideTasks`), `store.tsx` (`clearGuides`), `views/TodayView.tsx` | DESIGN §6.30 |
 | Usap baris tugas di layar sentuh (kanan = Selesai, kiri = Jadwalkan) + tugas panduan keempat | `components/TaskRow.tsx`, `lib/seed.ts` | DESIGN §6.31 |
 | Suara dan getaran saat tugas selesai / ambang usap, mati secara bawaan, sakelar di profil HP dan sidebar | `lib/feedback.ts`, `store.tsx`, `App.tsx`, `TaskRow.tsx` | DESIGN §6.32; getaran iOS menunggu Capacitor |
+| Logo "Cincin terbuka": `LogoMark` di sidebar dan halaman Masuk, favicon SVG/PNG, apple-touch-icon, ikon 192/512 + maskable untuk PWA | `components/icons.tsx`, `public/`, `index.html` | DESIGN §5.1 |
 | Gerak mikro: centang memantul, warna centang/judul berganti halus, progress bar mengikuti token gerak (mati saat reduced motion) | `TaskRow.tsx`, `TaskDetail.tsx`, `ui.tsx`, `index.css` | DESIGN §6.32 |
 
 ## Belum dibangun
 
 1. **Backend** (PRD §8): akun sungguhan, sinkronisasi cloud, validasi kuota Gratis/Pro di server, tautan undangan sungguhan, realtime. Saat ini semua data hanya di `localStorage` browser.
 2. **Notifikasi pengingat**: pilihan pengingat sudah tersimpan di tugas (`rems`), tapi belum ada yang mengirim notifikasi.
-3. **PWA + Capacitor Android** (PRD §4): manifest, service worker, paket Android, Google Play Billing. Saat itu, getaran memakai `@capacitor/haptics` (perlu persetujuan dependency) supaya iOS ikut.
+3. **PWA + Capacitor Android** (PRD §4): manifest (ikon 192/512 + maskable sudah ada di `public/`), service worker, paket Android, Google Play Billing. Saat itu, getaran memakai `@capacitor/haptics` (perlu persetujuan dependency) supaya iOS ikut.
 4. **Overlay Google Calendar** (Pro): belum ada desainnya (DESIGN.md §10).
 
 ## Keterbatasan yang diketahui
@@ -42,5 +43,5 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
-- **25 Nov 2026** — Pass 7: dukungan perangkat (tablet, sentuh, safe-area, pintasan per platform). Pass 8: gerak mikro centang dan progres. Pass 9: pilih area awal saat Daftar. Pass 10: tugas panduan. Pass 11: usap baris tugas; sheet profil kini tertutup saat Keluar. Pass 12: suara dan getaran. Keputusan untuk area awal, tugas panduan, usap, dan gerak/suara/getaran dicatat di DESIGN 0.9 dan PRD.
+- **25 Nov 2026** — Pass 7: dukungan perangkat (tablet, sentuh, safe-area, pintasan per platform). Pass 8: gerak mikro centang dan progres. Pass 9: pilih area awal saat Daftar. Pass 10: tugas panduan. Pass 11: usap baris tugas; sheet profil kini tertutup saat Keluar. Pass 12: suara dan getaran. Pass 13: logo dan ikon aplikasi. Keputusan untuk area awal, tugas panduan, usap, dan gerak/suara/getaran dicatat di DESIGN 0.9 dan PRD.
 - **25 Nov 2026** — Pass 1: inti (shell, Hari Ini, Inbox, Proyek, detail, composer, tema). Pass 2: Jadwal. Pass 3: pencarian, Kelola proyek/area. Pass 4: akun, Pro, titik kunci, durasi/ulangi/pengingat, sambutan akun baru. Pass 5: Bagikan proyek & riwayat aktivitas. Pass 6: focus trap + tumpukan dialog (`Modal`/`Sheet`/`Search`), tanggal bebas di Proyek baru, tautan dapat diklik di catatan, filter area di Timeline, Urungkan untuk geser semua terlambat.

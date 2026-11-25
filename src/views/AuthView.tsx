@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { LogoMark } from '../components/icons'
 import { Chip } from '../components/ui'
 import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS } from '../lib/constants'
 import { useStore } from '../store'
@@ -139,7 +140,7 @@ export function AuthView({ mobile }: { mobile: boolean }) {
 
   const Logo = ({ size }: { size: number }) => (
     <div className="flex items-center gap-5">
-      <span aria-hidden="true" className="rounded-sm bg-accent" style={{ width: size, height: size }} />
+      <LogoMark size={size} />
       <span className="font-display font-semibold" style={{ fontSize: size - 4 }}>TaskFlow</span>
     </div>
   )

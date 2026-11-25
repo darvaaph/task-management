@@ -155,6 +155,16 @@ Batas bawah: tidak ada teks di bawah **10 px**, dan teks 10–11 px hanya dalam 
 | Jadwal | Kalender |
 | Proyek | Map |
 
+### 5.1 Logo
+
+**Cincin terbuka:** cincin progres yang belum tertutup (celah di kanan atas), dan centang yang menembus celah itu. Artinya tugas selesai dan alurnya terus berjalan. Berkerabat dengan ikon Hari Ini (lingkaran + centang).
+
+- Geometri di kisi 64: kotak radius 15; cincin pusat (32, 32) jari-jari 17, tebal 5,5, celah dari −70° sampai −20°; centang `M22.5 31.5 29.5 38.5 50.5 12.5`, tebal 6; semua ujung membulat.
+- **Di dalam aplikasi** (`LogoMark` di `icons.tsx`): kotak `--accent`, garis `--on-accent`, jadi ikut warna aksen dan tema. Sidebar 22 px, halaman Masuk 22–24 px, selalu diikuti kata **TaskFlow** dalam Bricolage Grotesque 600.
+- **Di luar aplikasi** (favicon, ikon layar utama) warna tetap Indigo, karena browser dan launcher tidak tahu aksen pengguna: terang `#355bbd` + garis putih, gelap `#7ca2f6` + garis `#161614` (`oklch(0.5 0.16 265)` dan `oklch(0.72 0.13 265)` dalam sRGB).
+- Berkas di `public/`: `favicon.svg` (berganti otomatis di mode gelap), `favicon-32.png`, `apple-touch-icon.png` 180 (kotak penuh, iOS membulatkan sendiri), `icon-192.png`, `icon-512.png`, `icon-maskable-512.png` (latar penuh, tanda diperkecil 80 % agar aman dipotong Android). Untuk mengubah bentuk, ubah SVG lalu buat ulang PNG-nya.
+- Jangan memberi bayangan, gradien, atau garis tepi pada logo, dan jangan memutar atau memisah cincin dari centangnya.
+
 ---
 
 ## 6. Komponen
@@ -417,7 +427,6 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## 10. Hal yang belum diputuskan
 
-- Ikon aplikasi dan logo (saat ini masih kotak warna aksen).
 - Harga Pro (Rp99.000 di prototipe hanya contoh).
 - Apakah durasi tugas tetap Pro, atau gratis dengan geser-blok sebagai fitur Pro.
 - Pengecualian PRD: anggota Gratis di proyek milik pengguna Pro boleh membuka Timeline proyek itu (belum diterapkan; di prototipe Anda selalu pemilik).
@@ -427,6 +436,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.10 (25 Nov 2026):** Logo "Cincin terbuka" (5.1), favicon, dan ikon aplikasi.
 - **0.9 (25 Nov 2026):** Perangkat dan platform (tablet, sentuh, safe-area, pintasan per platform). Rencana: pilih area awal, tugas panduan, usap baris, gerak/suara/getaran.
 - **0.8 (25 Nov 2026):** Tanggal mulai, pengingat, PIC saat menambah, geser-dan-lepas desktop, jadwal berulang di kalender, alur Bagikan + riwayat aktivitas, keadaan kosong dan sambutan akun baru.
 - **0.7 (25 Nov 2026):** Paket Gratis/Pro dan layar Pro, Timeline terkunci, tugas berulang, durasi tugas, warna aksen di profil, layar Daftar/Lupa kata sandi, pencarian ⌘K.
