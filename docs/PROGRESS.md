@@ -17,7 +17,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Pencarian ⌘K | `components/Search.tsx` | |
 | Kelola proyek (bagian, arsip, hapus 2 langkah) dan Kelola area | `components/Manage.tsx` | |
 | Bagikan proyek (tautan + Salin + Reset, kuota 3/20, keluarkan + Urungkan, pratinjau undangan yang bisa dibuka-tutup, riwayat aktivitas Pro) | `components/Share.tsx` | Tombol Simulasi hanya di mode demo; akun biasa diberi tahu bahwa bergabung menunggu sinkronisasi cloud |
-| Masuk / Daftar / Lupa kata sandi / Tautan terkirim, Mode Demo, Keluar | `views/AuthView.tsx` | Simulasi, tanpa backend |
+| Masuk dengan Google + Mode Demo, Pilih area awal setelah login pertama, Keluar | `views/AuthView.tsx`, `store.tsx`, `functions/index.js` | DESIGN §6.20, §6.29; login Google lewat Firebase Auth (`signInWithPopup` + cadangan `signInWithRedirect`), Mode Demo tetap lokal |
 | Layar Pro + semua titik kunci (Timeline, kuota proyek, ulangi, durasi, pengingat, warna aksen, bagikan) | `components/Pro.tsx` | "Beli Pro" hanya simulasi |
 | Profil HP: tema, kelola area, warna aksen, Pro, keluar | `App.tsx` (`ProfileSheet`) | |
 | Perangkat dan platform: panel detail melayang di 768–1099 px, isian 16 px di layar sentuh, safe-area di navigasi bawah/FAB/toast/sheet, `dvh` di modal, label ⌘K/Ctrl+K per platform, Timeline di tablet sentuh memakai "Ubah jadwal" | `lib/device.ts`, `App.tsx`, `index.css` | DESIGN §6.28 |
@@ -32,6 +32,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Gerak mikro: centang memantul, warna centang/judul berganti halus, progress bar mengikuti token gerak (mati saat reduced motion) | `TaskRow.tsx`, `TaskDetail.tsx`, `ui.tsx`, `index.css` | DESIGN §6.32 |
 | Backend Fase 1A — Fondasi Firebase & Emulator: konfigurasi emulator (Auth 9099, Firestore 8080, Functions 5001, UI 4000), `.firebaserc` (`demo-taskflow` default, `prod` alias), `firestore.rules` awal (tolak semua), `firestore.indexes.json`, klien `src/lib/firebase.ts` (`persistentLocalCache` + `persistentMultipleTabManager`, tanpa Analytics), skrip `emulators` & `test:rules` | `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`, `src/lib/firebase.ts`, `package.json` | HANDOFF-FASE1 §4 (1A); belum disambungkan ke UI/store |
 | Backend Fase 1B — Security Rules & tesnya: aturan Firestore untuk `users/{uid}` (isolasi pemilik, field server-only, `accent` Gratis vs Pro), `areas`, `tasks` (judul wajib 1–300 karakter, `dur`/`rec`/`rems` Gratis vs Pro, field audit immutable), `reminders`, penolakan penuh `projects`/`invites`/`purchases`, dan 21 tes unit `node --test` lewat emulator | `firestore.rules`, `tests/rules/firestore.test.mjs`, `package.json` | HANDOFF-FASE1 §4 (1B); `@firebase/rules-unit-testing` sebagai devDependency; belum disambungkan ke UI/store |
+| Backend Fase 1C — Login Google web & `onUserCreated`: Cloud Function `onUserCreated` membuat `users/{uid}` (`plan: 'free'`, `activeOwned: 0`), layar Masuk baru ("Lanjutkan dengan Google" + "Coba Mode Demo"), Pilih area awal menulis `users/{uid}/areas` dan `guideTasks()` ke `users/{uid}/tasks`, Keluar (`signOut`), Mode Demo tetap lokal | `functions/index.js`, `functions/package.json`, `firebase.json`, `src/store.tsx`, `src/views/AuthView.tsx`, `src/components/icons.tsx`, `docs/DESIGN.md` | HANDOFF-FASE1 §4 (1C); mutasi tugas/area berkelanjutan menyusul di 1D |
 
 ## Belum dibangun
 
@@ -42,12 +43,13 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
-- "Masuk" hanya memeriksa format isian lalu masuk dengan data yang ada di browser ini. "Daftar" membuat akun kosong yang juga hanya ada di browser ini.
+- Login Google dan setup awal (area + tugas panduan) sudah tersambung ke Firebase Emulator, sedangkan perubahan tugas/area berkelanjutan baru dipindah ke Firestore pada Langkah 1D.
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
-- Belum ada test otomatis maupun linter. Pemeriksaan = `npm run build` + cek manual di browser.
+- Tes otomatis baru mencakup Security Rules (`npm run test:rules`); belum ada tes UI atau linter. Pemeriksaan = `npm run build` + `npm run test:rules` + cek manual di browser.
 
 ## Riwayat
 
+- **25 Nov 2026** — Backend Fase 1C: Cloud Function `onUserCreated`, login Google web (`signInWithPopup` + cadangan `signInWithRedirect`), layar Masuk baru (§6.20), Pilih area awal menulis area & tugas panduan ke Firestore, dan Keluar (`signOut`).
 - **25 Nov 2026** — Backend Fase 1B: Security Rules untuk `users`, `areas`, `tasks`, `reminders` (penolakan penuh `projects`/`invites`/`purchases`) dan 21 tes aturan `node --test` via Firestore Emulator.
 - **25 Nov 2026** — Backend Fase 1A: fondasi Firebase lokal, emulator (`demo-taskflow`), `firestore.rules` awal (tolak semua), dan `src/lib/firebase.ts`.
 - **25 Nov 2026** — Pass 7: dukungan perangkat (tablet, sentuh, safe-area, pintasan per platform). Pass 8: gerak mikro centang dan progres. Pass 9: pilih area awal saat Daftar. Pass 10: tugas panduan. Pass 11: usap baris tugas; sheet profil kini tertutup saat Keluar. Pass 12: suara dan getaran. Pass 13: logo dan ikon aplikasi. Pass 14: PWA dan mode offline. Pass 15: notifikasi pengingat. Pass 16: detail tugas HP diringkas, catatan dipindah ke atas. Keputusan untuk area awal, tugas panduan, usap, dan gerak/suara/getaran dicatat di DESIGN 0.9 dan PRD.

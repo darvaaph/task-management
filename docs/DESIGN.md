@@ -311,14 +311,14 @@ Mode Demo membuka semua fitur Pro dengan label DEMO PREVIEW.
 
 ### 6.20 Akun
 
-> **Akan berubah saat backend dibangun (PRD §9.1):** login hanya Google. Layar menjadi "Lanjutkan dengan Google" + "Coba Mode Demo", dengan catatan kecil agar pelajar memakai akun Google pribadi (akun sekolah bisa diblokir admin). Isian email/kata sandi dan Lupa kata sandi dihapus; "Pilih area awal" (6.29) muncul setelah login Google pertama. Pengguna yang punya data lokal ditawari memindahkannya ke akun.
-
-Saat ini (tanpa backend) satu layar masuk dengan empat keadaan: **Masuk**, **Daftar**, **Lupa kata sandi**, **Tautan terkirim**.
-- Setiap isian punya label tertulis (bukan hanya placeholder) dan `autocomplete` yang benar.
-- Error muncul di atas form, satu pesan, berlatar `--high-soft`: email tidak valid, kata sandi kosong, nama kosong, kata sandi < 8 karakter.
-- Daftar menampilkan petunjuk panjang kata sandi yang berubah saat mengetik.
-- Pesan reset **tidak membocorkan** apakah email terdaftar ("Kalau email ini terdaftar, tautan reset sudah dikirim").
-- "Coba Mode Demo" hanya muncul di keadaan Masuk.
+Satu layar masuk tanpa isian email, kata sandi, atau Lupa kata sandi (login hanya lewat Google, PRD §9.1):
+- Judul **"Masuk ke TaskFlow"** dengan keterangan *"Lanjutkan ke tugas dan proyekmu."*
+- Tombol utama **"Lanjutkan dengan Google"** (latar `--fg`, teks `--bg`, ikon monokrom `currentColor`; saat berjalan menampilkan *"Menghubungkan…"* atau *"Menyiapkan akun…"*). Di web memakai popup dengan cadangan redirect bila popup diblokir.
+- Catatan kecil di bawah tombol Google (`--fg3`): *"Gunakan akun Google pribadi. Akun sekolah atau kampus kadang diblokir oleh admin."*
+- Pemisah `atau`, lalu tombol aksen **"Coba Mode Demo"** dengan keterangan *"Tanpa daftar. Data contoh tersimpan di perangkat ini."* Mode Demo tetap lokal dan tidak menyentuh Firebase.
+- Error tampil di atas tombol utama (`role="alert"`, latar `--high-soft`, teks `--high`) dengan pesan pendek yang tidak menyalahkan (*"Masuk dibatalkan."*, *"Tidak bisa terhubung ke Google. Periksa koneksi internet lalu coba lagi."*, *"Gagal masuk dengan Google. Coba lagi."*, *"Profil akun belum siap. Coba lagi sebentar."*).
+- Setelah login Google pertama (akun belum memiliki area di cloud), layar berpindah ke **"Pilih area awal"** (6.29), lalu menulis area pilihan dan tugas panduan (`guideTasks()`) ke akun.
+- Keluar (`signOut`) mengakhiri sesi dan kembali ke layar Masuk. *(Tawaran memindahkan data lokal ke akun menyusul pada langkah 1E.)*
 
 ### 6.21 Pencarian
 
@@ -388,7 +388,7 @@ Akun baru dari Daftar mulai **kosong** (area yang dipilih di 6.29 tetap ada). Ha
 
 ### 6.29 Pilih area awal
 
-Langkah kedua di layar Daftar (setelah nama, email, kata sandi lolos): "Pilih area yang kamu jalani". Chip area (`Chip`, bisa lebih dari satu): **Kuliah, Kantor, Pribadi** (tercentang bawaan), **Sekolah, Usaha, Organisasi**; masing-masing memakai warna `AREA_COLORS` di urutan yang sama. Minimal satu area ("Pilih minimal satu area."). Tombol utama "Lanjut", tautan "‹ Kembali" (isian tetap terisi) dan "Lewati" (memakai 3 area bawaan). Tidak memakan kuota proyek. Area tetap bisa diubah di Kelola area.
+Muncul setelah login Google pertama (saat akun belum memiliki area): "Pilih area yang kamu jalani". Chip area (`Chip`, bisa lebih dari satu): **Kuliah, Kantor, Pribadi** (tercentang bawaan), **Sekolah, Usaha, Organisasi**; masing-masing memakai warna `AREA_COLORS` di urutan yang sama. Minimal satu area ("Pilih minimal satu area."). Tombol utama "Lanjut" (saat menyimpan: *"Menyimpan…"*), tautan "‹ Kembali" (keluar dan kembali ke layar Masuk) dan "Lewati" (memakai 3 area bawaan). Tidak memakan kuota proyek. Area tetap bisa diubah di Kelola area.
 
 ### 6.30 Tugas panduan
 
@@ -449,6 +449,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.12 (25 Nov 2026):** Layar Masuk diperbarui ke login Google + Mode Demo (§6.20) dan Pilih area awal setelah login Google pertama (§6.29).
 - **0.11 (25 Nov 2026):** Area di proyek bersama bersifat per anggota (tanpa area otomatis), halaman undangan tanpa area pemilik, Simulasi hanya di demo.
 - **0.10 (25 Nov 2026):** Logo "Cincin terbuka" (5.1), favicon, dan ikon aplikasi.
 - **0.9 (25 Nov 2026):** Perangkat dan platform (tablet, sentuh, safe-area, pintasan per platform). Rencana: pilih area awal, tugas panduan, usap baris, gerak/suara/getaran.

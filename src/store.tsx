@@ -1,10 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  GoogleAuthProvider,
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut as firebaseSignOut,
+} from 'firebase/auth'
+import { collection, doc, getDocs, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS, FREE_MEMBER_QUOTA, FREE_PROJECT_QUOTA, MEMBER_POOL, PEOPLE, PRO_MEMBER_QUOTA, STATUS } from './lib/constants'
 import { addDays, diffDays, fmtDay, today } from './lib/dates'
+import { auth, db } from './lib/firebase'
 import { inToday, isOverdue, nextActiveOccurrence, parseDest, type Dest } from './lib/logic'
 import { guideTasks, seed } from './lib/seed'
 import { feedback } from './lib/feedback'
-import type { Activity, Area, Data, ISODate, Priority, Project, Task } from './lib/types'
+import type { Activity, Area, Data, ISODate, Priority, Project, Recurrence, Status, Task } from './lib/types'
 
 const KEY = 'taskflow-v1'
 
@@ -80,6 +90,39 @@ const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
 const statusActivity = (actor: string, title: string, status: Task['status']) =>
   status === 'done' ? `${actor} menyelesaikan "${title}"` : `${actor} memindah "${title}" ke ${STATUS[status]}`
 
+const VALID_ACCENTS: Accent[] = ['indigo', 'teal', 'tangerine', 'forest']
+const VALID_STATUS: Status[] = ['todo', 'in_progress', 'done']
+const VALID_PRIO: Priority[] = ['high', 'med', 'low']
+const VALID_REC: Recurrence[] = ['daily', 'weekly', 'weekdays', 'monthly']
+
+const authErrMsg = (err: unknown) => {
+  const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'Masuk dibatalkan.'
+  if (code === 'auth/network-request-failed') return 'Tidak bisa terhubung ke Google. Periksa koneksi internet lalu coba lagi.'
+  return 'Gagal masuk dengan Google. Coba lagi.'
+}
+
+function docToTask(id: string, d: Record<string, unknown>): Task {
+  return {
+    id,
+    title: typeof d.title === 'string' ? d.title : '',
+    project: null,
+    area: typeof d.area === 'string' ? d.area : null,
+    section: typeof d.section === 'string' ? d.section : null,
+    assignee: typeof d.assignee === 'string' ? d.assignee : null,
+    status: VALID_STATUS.includes(d.status as Status) ? (d.status as Status) : 'todo',
+    prio: VALID_PRIO.includes(d.prio as Priority) ? (d.prio as Priority) : 'med',
+    start: typeof d.start === 'string' ? d.start : null,
+    due: typeof d.due === 'string' ? d.due : null,
+    time: typeof d.time === 'string' ? d.time : null,
+    notes: typeof d.notes === 'string' ? d.notes : '',
+    rec: VALID_REC.includes(d.rec as Recurrence) ? (d.rec as Recurrence) : null,
+    dur: typeof d.dur === 'number' ? d.dur : null,
+    ...(Array.isArray(d.rems) ? { rems: d.rems.filter((x): x is string => typeof x === 'string') } : {}),
+    ...(d.guide === true ? { guide: true } : {}),
+  }
+}
+
 function useStoreValue() {
   const initial = useMemo(load, [])
   const [data, setData] = useState<Data>(initial.data)
@@ -87,7 +130,13 @@ function useStoreValue() {
   const [account, setAccountState] = useState<Account>(initial.account)
   const [ui, setUIState] = useState<UI>(UI0)
   const [toast, setToast] = useState<Toast | null>(null)
+  const [uid, setUid] = useState<string | null>(null)
+  const [needsAreas, setNeedsAreas] = useState(false)
+  const [authBusy, setAuthBusy] = useState(false)
+  const [authStatus, setAuthStatus] = useState('')
+  const [authError, setAuthError] = useState('')
   const timer = useRef<number>(undefined)
+  const handledUid = useRef<string | null>(null)
   const dataRef = useRef(data)
   dataRef.current = data
   const accountRef = useRef(account)
@@ -102,6 +151,159 @@ function useStoreValue() {
       /* private mode: keep working in memory */
     }
   }, [data, theme, account])
+
+  // Keep Mode Demo completely local; only listen to Firebase Auth outside Demo Mode.
+  useEffect(() => {
+    if (account.demo) return
+
+    let active = true
+    let unsubProfile: (() => void) | null = null
+    let waitTimer: number | undefined
+
+    const clearProfileWatch = () => {
+      unsubProfile?.()
+      unsubProfile = null
+      window.clearTimeout(waitTimer)
+    }
+
+    // Surface errors from signInWithRedirect fallback if returning from a redirect flow.
+    getRedirectResult(auth).catch(err => {
+      if (!active) return
+      setAuthBusy(false)
+      setAuthStatus('')
+      setAuthError(authErrMsg(err))
+    })
+
+    const unsubAuth = onAuthStateChanged(auth, fbUser => {
+      if (!active || (accountRef.current.demo && accountRef.current.loggedIn)) return
+      clearProfileWatch()
+
+      if (!fbUser) {
+        handledUid.current = null
+        setUid(null)
+        setNeedsAreas(false)
+        setAuthBusy(false)
+        setAuthStatus('')
+        if (accountRef.current.loggedIn && !accountRef.current.demo) {
+          setAccountState(a => ({ ...a, loggedIn: false }))
+        }
+        return
+      }
+
+      setUid(fbUser.uid)
+      setAuthError('')
+      if (!accountRef.current.loggedIn) {
+        setAuthBusy(true)
+        setAuthStatus('Menyiapkan akun…')
+      }
+
+      // Wait for onUserCreated Cloud Function to materialize users/{uid} on first login.
+      waitTimer = window.setTimeout(() => {
+        if (!active || handledUid.current === fbUser.uid) return
+        setAuthBusy(false)
+        setAuthStatus('')
+        setAuthError('Profil akun belum siap. Coba lagi sebentar.')
+      }, 12000)
+
+      unsubProfile = onSnapshot(
+        doc(db, 'users', fbUser.uid),
+        async snap => {
+          if (!active || !snap.exists()) return
+          window.clearTimeout(waitTimer)
+          setAuthError('')
+
+          const p = snap.data()
+          const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : (fbUser.displayName?.trim() || 'Anda')
+          const plan: 'free' | 'pro' = p.plan === 'pro' ? 'pro' : 'free'
+          const accent: Accent = plan === 'pro' && VALID_ACCENTS.includes(p.accent) ? p.accent : 'indigo'
+
+          if (handledUid.current === fbUser.uid) {
+            setAccountState(a => ({ ...a, name, plan, accent }))
+            return
+          }
+          handledUid.current = fbUser.uid
+
+          try {
+            const areasSnap = await getDocs(collection(db, 'users', fbUser.uid, 'areas'))
+            if (!active) return
+
+            if (areasSnap.empty) {
+              // First login: collect starting areas before entering the workspace.
+              setAccountState(a => ({
+                ...a,
+                loggedIn: false,
+                demo: false,
+                name,
+                plan,
+                accent,
+                onboarding: true,
+                checkedAreas: false,
+              }))
+              setNeedsAreas(true)
+              setAuthBusy(false)
+              setAuthStatus('')
+              return
+            }
+
+            const tasksSnap = await getDocs(collection(db, 'users', fbUser.uid, 'tasks'))
+            if (!active) return
+
+            const areas: Area[] = areasSnap.docs
+              .map(d => {
+                const x = d.data()
+                return {
+                  id: d.id,
+                  name: typeof x.name === 'string' ? x.name : d.id,
+                  color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
+                  order: typeof x.order === 'number' ? x.order : 999,
+                }
+              })
+              .sort((a, b) => a.order - b.order)
+              .map(({ id, name: n, color }) => ({ id, name: n, color }))
+
+            const cloudTasks = tasksSnap.docs.map(d => docToTask(d.id, d.data()))
+            setData(d => ({
+              ...d,
+              areas,
+              tasks: [...cloudTasks, ...d.tasks.filter(t => t.project != null)],
+            }))
+            setAccountState(a => ({
+              ...a,
+              loggedIn: true,
+              demo: false,
+              name,
+              plan,
+              accent,
+              onboarding: typeof p.onboarding === 'boolean' ? p.onboarding : true,
+              checkedAreas: Boolean(p.checkedAreas),
+            }))
+            setNeedsAreas(false)
+            setAuthBusy(false)
+            setAuthStatus('')
+          } catch {
+            if (!active) return
+            handledUid.current = null
+            setAuthBusy(false)
+            setAuthStatus('')
+            setAuthError('Gagal memuat data akun. Coba lagi.')
+          }
+        },
+        () => {
+          if (!active) return
+          window.clearTimeout(waitTimer)
+          setAuthBusy(false)
+          setAuthStatus('')
+          setAuthError('Gagal memuat profil akun. Coba lagi.')
+        },
+      )
+    })
+
+    return () => {
+      active = false
+      clearProfileWatch()
+      unsubAuth()
+    }
+  }, [account.demo])
 
   const setAccount = useCallback((patch: Partial<Account>) => setAccountState(a => ({ ...a, ...patch })), [])
   const isPro = account.plan === 'pro' || account.demo
@@ -334,30 +536,125 @@ function useStoreValue() {
 
   /* ----- Akun ----- */
   const startDemo = useCallback(() => {
-    // Leaving a real account for the demo loads fresh sample data.
+    // Leaving a real account for the demo loads fresh sample data without touching Firebase.
     if (!account.demo) setData(seed())
+    setNeedsAreas(false)
+    setAuthError('')
+    setAuthBusy(false)
+    setAuthStatus('')
     setAccountState(a => ({ ...a, loggedIn: true, demo: true, name: 'Anda', onboarding: false }))
     setUIState(UI0())
   }, [account.demo])
 
-  const signIn = useCallback(() => {
-    // No backend yet: signing in keeps this browser's data and leaves demo mode.
-    setAccountState(a => ({ ...a, loggedIn: true, demo: false }))
-    setUIState(UI0())
-    say('Berhasil masuk')
-  }, [say])
+  const signInWithGoogle = useCallback(async () => {
+    setAuthError('')
+    setAuthBusy(true)
+    setAuthStatus('Menghubungkan…')
+    const provider = new GoogleAuthProvider()
+    provider.setCustomParameters({ prompt: 'select_account' })
+    try {
+      await signInWithPopup(auth, provider)
+    } catch (err) {
+      const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
+      // Fall back to redirect when browser blocks popups.
+      if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+        try {
+          await signInWithRedirect(auth, provider)
+          return
+        } catch (redirErr) {
+          setAuthBusy(false)
+          setAuthStatus('')
+          setAuthError(authErrMsg(redirErr))
+          return
+        }
+      }
+      setAuthBusy(false)
+      setAuthStatus('')
+      setAuthError(authErrMsg(err))
+    }
+  }, [])
 
-  const register = useCallback((name: string, areaIds: string[] = DEFAULT_AREA_IDS) => {
-    const areas = AREA_PRESETS.map((a, i) => ({ ...a, color: AREA_COLORS[i] })).filter(a => areaIds.includes(a.id))
-    setData({ tasks: guideTasks(), projects: [], areas, activity: [] })
-    setAccountState(a => ({ ...a, loggedIn: true, demo: false, name, plan: 'free', accent: 'indigo', onboarding: true, checkedAreas: false }))
-    setUIState(UI0())
-    say(`Akun dibuat. Selamat datang, ${name}!`)
-  }, [say])
+  const completeSetup = useCallback(async (areaIds: string[] = DEFAULT_AREA_IDS) => {
+    const curUid = auth.currentUser?.uid ?? uid
+    if (!curUid) {
+      setAuthError('Sesi masuk tidak ditemukan. Silakan masuk ulang.')
+      return
+    }
+    const areas: Area[] = AREA_PRESETS
+      .map((a, i) => ({ ...a, color: AREA_COLORS[i] }))
+      .filter(a => areaIds.includes(a.id))
+    if (!areas.length) return
 
-  const signOut = useCallback(() => {
-    setAccountState(a => ({ ...a, loggedIn: false }))
+    setAuthError('')
+    setAuthBusy(true)
+    setAuthStatus('Menyimpan…')
+    const guides = guideTasks()
+
+    try {
+      const batch = writeBatch(db)
+      areas.forEach((a, order) => {
+        batch.set(doc(db, 'users', curUid, 'areas', a.id), {
+          name: a.name,
+          color: a.color,
+          order,
+        })
+      })
+      guides.forEach(t => {
+        batch.set(doc(db, 'users', curUid, 'tasks', t.id), {
+          title: t.title,
+          project: null,
+          area: t.area,
+          section: t.section,
+          assignee: t.assignee,
+          status: t.status,
+          prio: t.prio,
+          start: t.start,
+          due: t.due,
+          time: t.time,
+          dur: t.dur,
+          rec: t.rec,
+          notes: t.notes,
+          guide: true,
+          createdBy: curUid,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      })
+      batch.update(doc(db, 'users', curUid), { onboarding: true, checkedAreas: false })
+      await batch.commit()
+
+      setData({ tasks: guides, projects: [], areas, activity: [] })
+      setAccountState(a => ({ ...a, loggedIn: true, demo: false, onboarding: true, checkedAreas: false }))
+      setNeedsAreas(false)
+      setAuthBusy(false)
+      setAuthStatus('')
+      setUIState(UI0())
+      say(`Selamat datang, ${accountRef.current.name}!`)
+    } catch {
+      setAuthBusy(false)
+      setAuthStatus('')
+      setAuthError('Gagal menyimpan area awal. Coba lagi.')
+    }
+  }, [say, uid])
+
+  const signOut = useCallback(async () => {
+    if (accountRef.current.demo) {
+      setAccountState(a => ({ ...a, loggedIn: false, demo: false }))
+      setUIState(UI0())
+      return
+    }
+    handledUid.current = null
+    setNeedsAreas(false)
+    setAuthBusy(false)
+    setAuthStatus('')
+    setAuthError('')
+    setAccountState(ACCOUNT0)
     setUIState(UI0())
+    try {
+      await firebaseSignOut(auth)
+    } catch {
+      /* keep user returned to sign-in screen even if network is down */
+    }
   }, [])
 
   const buyPro = useCallback(() => {
@@ -377,7 +674,9 @@ function useStoreValue() {
   const go = useCallback((view: View, extra: Partial<UI> = {}) => setUI({ view, taskId: null, overlay: null, ...extra }), [setUI])
 
   return {
-    ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro, startDemo, signIn, register, signOut, buyPro, go, toast, setToast, say,
+    ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro,
+    needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
+    startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say,
     updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
     renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,
     updateArea, addArea, deleteArea,

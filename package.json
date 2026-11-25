@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "emulators": "firebase emulators:start --only auth,firestore --project demo-taskflow",
+    "emulators": "firebase emulators:start --only auth,firestore,functions --project demo-taskflow",
     "test:rules": "firebase emulators:exec --only firestore --project demo-taskflow \"node --test tests/rules/*.test.mjs\""
   },
   "dependencies": {

@@ -38,7 +38,9 @@ export const db = isNewApp
   : getFirestore(app);
 
 // Guard emulator wiring so Vite HMR reloads do not connect twice.
+// Match the page hostname (localhost vs 127.0.0.1) so Auth redirect/popup stays same-site under storage partitioning.
 if (useEmulators && isNewApp) {
-  connectAuthEmulator(auth, 'http://127.0.0.1:9099');
-  connectFirestoreEmulator(db, '127.0.0.1', 8080);
+  const host = typeof location !== 'undefined' && location.hostname === 'localhost' ? 'localhost' : '127.0.0.1';
+  connectAuthEmulator(auth, `http://${host}:9099`);
+  connectFirestoreEmulator(db, host, 8080);
 }
