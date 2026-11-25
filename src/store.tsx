@@ -64,6 +64,25 @@ export interface LocalMigration {
 const ACCOUNT0: Account = { loggedIn: false, demo: false, name: 'Anda', plan: 'free', accent: 'indigo', onboarding: false, checkedAreas: false }
 const EMPTY_DATA: Data = { tasks: [], projects: [], areas: [], activity: [] }
 const BATCH_LIMIT = 500
+const TEXT_DEBOUNCE_MS = 600
+
+interface PendingTaskWrite {
+  kind: 'task'
+  uid: string
+  id: string
+  patch: Partial<Task>
+  timer: number
+}
+
+interface PendingAreaWrite {
+  kind: 'area'
+  uid: string
+  id: string
+  patch: Partial<Area>
+  timer: number
+}
+
+type PendingWrite = PendingTaskWrite | PendingAreaWrite
 
 const safeDocId = (raw: string, fallback: string) =>
   raw.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || fallback
@@ -305,6 +324,9 @@ function useStoreValue() {
   const [localData, setLocalData] = useState<Data>(initial.data)
   const [cloudAreas, setCloudAreas] = useState<Area[]>([])
   const [cloudTasks, setCloudTasks] = useState<Task[]>([])
+  // Local draft overlays keep debounced text inputs responsive and immune to intermediate snapshots.
+  const [draftTasks, setDraftTasks] = useState<Record<string, Partial<Task>>>({})
+  const [draftAreas, setDraftAreas] = useState<Record<string, Partial<Area>>>({})
   const [theme, setTheme] = useState<Theme>(initial.theme)
   const [account, setAccountState] = useState<Account>(initial.account)
   const [ui, setUIState] = useState<UI>(UI0)
@@ -327,6 +349,7 @@ function useStoreValue() {
   const seededRef = useRef(initial.seeded)
   const migratedRef = useRef(initial.migrated)
   const migratingRef = useRef(false)
+  const pendingWritesRef = useRef<Map<string, PendingWrite>>(new Map())
 
   const cloudActive = Boolean(uid && account.loggedIn && !account.demo)
   const cloudUidRef = useRef<string | null>(null)
@@ -334,13 +357,19 @@ function useStoreValue() {
 
   const data = useMemo<Data>(() => {
     if (!cloudActive) return localData
+    const mergedAreas = Object.keys(draftAreas).length
+      ? cloudAreas.map(a => (draftAreas[a.id] ? { ...a, ...draftAreas[a.id] } : a))
+      : cloudAreas
+    const mergedCloudTasks = Object.keys(draftTasks).length
+      ? cloudTasks.map(t => (draftTasks[t.id] ? { ...t, ...draftTasks[t.id] } : t))
+      : cloudTasks
     return {
-      areas: cloudAreas,
-      tasks: [...cloudTasks, ...localData.tasks.filter(t => t.project != null)],
+      areas: mergedAreas,
+      tasks: [...mergedCloudTasks, ...localData.tasks.filter(t => t.project != null)],
       projects: localData.projects,
       activity: localData.activity,
     }
-  }, [cloudActive, cloudAreas, cloudTasks, localData])
+  }, [cloudActive, cloudAreas, cloudTasks, draftAreas, draftTasks, localData])
 
   const dataRef = useRef(data)
   dataRef.current = data
@@ -594,8 +623,6 @@ function useStoreValue() {
   isProRef.current = isPro
   const openPro = useCallback((ctx: ProCtx = 'general') => setUIState(u => ({ ...u, pro: ctx })), [])
 
-  const setUI = useCallback((patch: Partial<UI>) => setUIState(u => ({ ...u, ...patch })), [])
-
   const say = useCallback((msg: string, undo: (() => void) | null = null) => {
     setToast({ msg, undo })
     window.clearTimeout(timer.current)
@@ -606,6 +633,86 @@ function useStoreValue() {
   const runCloud = useCallback((op: Promise<unknown>, fallbackMsg = 'Perubahan gagal disimpan ke cloud') => {
     void op.catch(() => say(fallbackMsg))
   }, [say])
+
+  const clearDraftTask = useCallback((id: string) => {
+    setDraftTasks(prev => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  const clearDraftArea = useCallback((id: string) => {
+    setDraftAreas(prev => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
+  const cancelPendingWrite = useCallback((key: string) => {
+    const entry = pendingWritesRef.current.get(key)
+    if (!entry) return
+    window.clearTimeout(entry.timer)
+    pendingWritesRef.current.delete(key)
+    if (entry.kind === 'task') clearDraftTask(entry.id)
+    else clearDraftArea(entry.id)
+  }, [clearDraftArea, clearDraftTask])
+
+  const flushWriteKey = useCallback((key: string) => {
+    const entry = pendingWritesRef.current.get(key)
+    if (!entry) return
+    window.clearTimeout(entry.timer)
+    pendingWritesRef.current.delete(key)
+
+    if (entry.kind === 'task') {
+      const cloudPatch = taskPatchToCloud(entry.patch)
+      if (cloudPatch) {
+        // Apply optimistically to cloudTasks too so clearing the draft never flashes stale text.
+        setCloudTasks(list => list.map(t => (t.id === entry.id ? { ...t, ...entry.patch } : t)))
+        runCloud(updateDoc(doc(db, 'users', entry.uid, 'tasks', entry.id), cloudPatch))
+      }
+      clearDraftTask(entry.id)
+      return
+    }
+
+    const areaPatch: UpdateData<DocumentData> = {}
+    if (entry.patch.name !== undefined) {
+      const trimmed = entry.patch.name.trim().slice(0, 60)
+      if (trimmed) areaPatch.name = trimmed
+    }
+    if (Object.keys(areaPatch).length) {
+      setCloudAreas(list => list.map(a => (a.id === entry.id ? { ...a, ...entry.patch } : a)))
+      runCloud(updateDoc(doc(db, 'users', entry.uid, 'areas', entry.id), areaPatch))
+    }
+    clearDraftArea(entry.id)
+  }, [clearDraftArea, clearDraftTask, runCloud])
+
+  const flushWrites = useCallback(() => {
+    const keys = Array.from(pendingWritesRef.current.keys())
+    for (const key of keys) flushWriteKey(key)
+  }, [flushWriteKey])
+
+  // Flush pending debounced edits if the user switches tabs, backgrounds the app, or closes the page.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flushWrites()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pagehide', flushWrites)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pagehide', flushWrites)
+    }
+  }, [flushWrites])
+
+  const setUI = useCallback((patch: Partial<UI>) => {
+    // Flush pending text edits when closing or switching task detail / area manager so final keystrokes are never lost.
+    if ('taskId' in patch || 'overlay' in patch || 'view' in patch) flushWrites()
+    setUIState(u => ({ ...u, ...patch }))
+  }, [flushWrites])
 
   /** Apply a local change and show a 6s toast with Urungkan that restores localData exactly as before. */
   const undoable = useCallback((msg: string, mutate: (d: Data) => Data) => {
@@ -638,13 +745,36 @@ function useStoreValue() {
     const curUid = cloudUidRef.current
     const t0 = dataRef.current.tasks.find(x => x.id === id)
     if (curUid && t0 && !t0.project) {
-      // Keep controlled inputs responsive when the user temporarily clears title while retyping.
-      if (patch.title !== undefined && !patch.title.trim()) {
-        setCloudTasks(list => list.map(t => (t.id === id ? { ...t, ...patch } : t)))
+      const textPatch: Partial<Task> = {}
+      const immediatePatch: Partial<Task> = {}
+      for (const [k, v] of Object.entries(patch) as [keyof Task, Task[keyof Task]][]) {
+        if (k === 'title' || k === 'notes') (textPatch as Record<string, unknown>)[k] = v
+        else (immediatePatch as Record<string, unknown>)[k] = v
       }
-      const cloudPatch = taskPatchToCloud(patch)
-      if (cloudPatch) {
-        runCloud(updateDoc(doc(db, 'users', curUid, 'tasks', id), cloudPatch))
+
+      const key = `task:${id}`
+      const hasText = Object.keys(textPatch).length > 0
+      const hasImmediate = Object.keys(immediatePatch).length > 0
+
+      if (hasImmediate) {
+        // Merge any queued text edit into the immediate write so we do not send two separate writes.
+        const pending = pendingWritesRef.current.get(key)
+        const combined = pending ? { ...pending.patch, ...patch } : patch
+        if (pending) cancelPendingWrite(key)
+        const cloudPatch = taskPatchToCloud(combined)
+        if (cloudPatch) {
+          runCloud(updateDoc(doc(db, 'users', curUid, 'tasks', id), cloudPatch))
+        }
+        return
+      }
+
+      if (hasText) {
+        setDraftTasks(prev => ({ ...prev, [id]: { ...prev[id], ...textPatch } }))
+        const existing = pendingWritesRef.current.get(key)
+        if (existing) window.clearTimeout(existing.timer)
+        const merged = existing ? { ...existing.patch, ...textPatch } : textPatch
+        const t = window.setTimeout(() => flushWriteKey(key), TEXT_DEBOUNCE_MS)
+        pendingWritesRef.current.set(key, { kind: 'task', uid: curUid, id, patch: merged, timer: t })
       }
       return
     }
@@ -655,7 +785,7 @@ function useStoreValue() {
         : d.activity
       return { ...d, tasks: d.tasks.map(t => (t.id === id ? { ...t, ...patch } : t)), activity }
     })
-  }, [runCloud])
+  }, [cancelPendingWrite, flushWriteKey, runCloud])
 
   const toggleTask = useCallback((id: string) => {
     const t = dataRef.current.tasks.find(x => x.id === id)
@@ -709,10 +839,12 @@ function useStoreValue() {
   }, [undoable, undoableCloud, updateTask])
 
   const deleteTask = useCallback((id: string) => {
-    setUI({ taskId: null })
     const curUid = cloudUidRef.current
     const t0 = dataRef.current.tasks.find(x => x.id === id)
     if (curUid && t0 && !t0.project) {
+      // Discard any queued text edit before deleting so a late debounce cannot write to a deleted doc.
+      cancelPendingWrite(`task:${id}`)
+      setUIState(u => ({ ...u, taskId: null }))
       const ref = doc(db, 'users', curUid, 'tasks', id)
       const restore = taskToCloudDoc(t0, curUid, isProRef.current)
       undoableCloud(
@@ -722,8 +854,9 @@ function useStoreValue() {
       )
       return
     }
+    setUI({ taskId: null })
     undoable('Tugas dihapus', d => ({ ...d, tasks: d.tasks.filter(x => x.id !== id) }))
-  }, [setUI, undoable, undoableCloud])
+  }, [cancelPendingWrite, setUI, undoable, undoableCloud])
 
   const clearGuides = useCallback(() => {
     const curUid = cloudUidRef.current
@@ -801,6 +934,7 @@ function useStoreValue() {
 
     // In Phase 1, loose tasks live in Firestore and project tasks remain local; crossing the boundary moves the record.
     if (curUid && !t.project && d.project) {
+      cancelPendingWrite(`task:${t.id}`)
       const moved: Task = { ...t, project: d.project, area: null, section: d.section, assignee }
       runCloud(deleteDoc(doc(db, 'users', curUid, 'tasks', t.id)))
       setLocalData(x => ({ ...x, tasks: [moved, ...x.tasks.filter(k => k.id !== t.id)] }))
@@ -945,26 +1079,31 @@ function useStoreValue() {
   const updateArea = useCallback((id: string, patch: Partial<Area>) => {
     const curUid = cloudUidRef.current
     if (curUid) {
-      const cloudPatch: UpdateData<DocumentData> = {}
-      if (patch.name !== undefined) {
-        const trimmed = patch.name.trim().slice(0, 60)
-        // Allow clearing the controlled input while retyping without tripping non-empty rules.
-        if (!trimmed) {
-          setCloudAreas(list => list.map(a => (a.id === id ? { ...a, ...patch } : a)))
-        } else {
-          cloudPatch.name = trimmed
-        }
-      }
+      const key = `area:${id}`
       if (patch.color !== undefined) {
-        cloudPatch.color = patch.color
+        const pending = pendingWritesRef.current.get(key)
+        const combined = pending ? { ...pending.patch, ...patch } : patch
+        if (pending) cancelPendingWrite(key)
+        const cloudPatch: UpdateData<DocumentData> = { color: patch.color }
+        if (combined.name !== undefined) {
+          const trimmed = combined.name.trim().slice(0, 60)
+          if (trimmed) cloudPatch.name = trimmed
+        }
         // A local project's colour still follows its area.
         setLocalData(d => ({
           ...d,
           projects: d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)),
         }))
-      }
-      if (Object.keys(cloudPatch).length) {
         runCloud(updateDoc(doc(db, 'users', curUid, 'areas', id), cloudPatch))
+        return
+      }
+      if (patch.name !== undefined) {
+        setDraftAreas(prev => ({ ...prev, [id]: { ...prev[id], name: patch.name } }))
+        const existing = pendingWritesRef.current.get(key)
+        if (existing) window.clearTimeout(existing.timer)
+        const merged = existing ? { ...existing.patch, name: patch.name } : { name: patch.name }
+        const t = window.setTimeout(() => flushWriteKey(key), TEXT_DEBOUNCE_MS)
+        pendingWritesRef.current.set(key, { kind: 'area', uid: curUid, id, patch: merged, timer: t })
       }
       return
     }
@@ -974,7 +1113,7 @@ function useStoreValue() {
       // A project's colour follows its area.
       projects: patch.color ? d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)) : d.projects,
     }))
-  }, [runCloud])
+  }, [cancelPendingWrite, flushWriteKey, runCloud])
 
   const addArea = useCallback((name: string) => {
     const trimmed = name.trim().slice(0, 60)
@@ -1000,6 +1139,7 @@ function useStoreValue() {
     setUIState(u => ({ ...u, inboxArea: 'all', projArea: 'all' }))
     const curUid = cloudUidRef.current
     if (curUid) {
+      cancelPendingWrite(`area:${a.id}`)
       const prevOrder = cloudAreaOrdersRef.current.get(a.id) ?? 0
       const affected = cloudTasksRef.current.filter(t => t.area === a.id)
       const areaRef = doc(db, 'users', curUid, 'areas', a.id)
@@ -1247,6 +1387,8 @@ function useStoreValue() {
       setUIState(UI0())
       return
     }
+    // Flush any queued debounced text edits before revoking Firebase Auth credentials.
+    flushWrites()
     handledUid.current = null
     setCloudAreas([])
     setCloudTasks([])
@@ -1293,7 +1435,7 @@ function useStoreValue() {
     ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro,
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
     pendingMigration, migrating, migrationError, migrateLocalData, skipMigration,
-    startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say,
+    startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say, flushWrites,
     updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
     renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,
     updateArea, addArea, deleteArea,

@@ -268,12 +268,12 @@ export function DetailPanel({ task, floating }: { task: Task; floating?: boolean
       </div>
       <div className="flex items-start gap-5">
         <CheckButton t={t} size={22} />
-        <AutoTextarea value={t.title} onChange={e => d.upd({ title: e.target.value })} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[20px] leading-tight font-semibold text-fg outline-none" />
+        <AutoTextarea value={t.title} onChange={e => d.upd({ title: e.target.value })} onBlur={d.s.flushWrites} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[20px] leading-tight font-semibold text-fg outline-none" />
       </div>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-3 text-[13px] text-fg3">
           Catatan
-          <AutoTextarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={2} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-none rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
+          <AutoTextarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} onBlur={d.s.flushWrites} rows={2} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-none rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
         </label>
         <NoteLinks text={t.notes} />
       </div>
@@ -340,11 +340,11 @@ export function DetailSheet({ task }: { task: Task }) {
     <Sheet onClose={d.close} label="Detail tugas">
       <div className="flex items-start gap-5">
         <CheckButton t={t} size={24} />
-        <AutoTextarea value={t.title} onChange={e => d.upd({ title: e.target.value })} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[21px] leading-tight font-semibold text-fg outline-none" />
+        <AutoTextarea value={t.title} onChange={e => d.upd({ title: e.target.value })} onBlur={d.s.flushWrites} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[21px] leading-tight font-semibold text-fg outline-none" />
       </div>
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-4"><span className={lbl}>CATATAN</span>
-          <AutoTextarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} placeholder="Catatan atau tautan…" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-5 text-[14px] leading-normal text-fg outline-none" />
+          <AutoTextarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} onBlur={d.s.flushWrites} placeholder="Catatan atau tautan…" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-5 text-[14px] leading-normal text-fg outline-none" />
         </label>
         <NoteLinks text={t.notes} />
       </div>

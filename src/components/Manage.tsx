@@ -134,7 +134,7 @@ export function ManageAreas({ mobile }: { mobile: boolean }) {
                 <button type="button" onClick={() => s.updateArea(a.id, { color: next })} aria-label={`Ganti warna area ${a.name}`} className="grid size-18 flex-none place-items-center rounded-[8px] border border-line bg-transparent">
                   <span aria-hidden="true" className="size-7 rounded-[4px]" style={{ background: a.color }} />
                 </button>
-                <input value={a.name} onChange={e => s.updateArea(a.id, { name: e.target.value })} aria-label="Nama area" className={`h-18 min-w-0 flex-1 ${field}`} />
+                <input value={a.name} onChange={e => s.updateArea(a.id, { name: e.target.value })} onBlur={s.flushWrites} aria-label="Nama area" className={`h-18 min-w-0 flex-1 ${field}`} />
                 <span className="min-w-[70px] text-right font-mono text-[11px] text-fg3">{nt} tugas · {np} proyek</span>
                 <button type="button" onClick={() => (nt || np ? setConfirm(a.id) : s.deleteArea(a))} aria-label={`Hapus area ${a.name}`} className="size-18 rounded-[8px] border-0 bg-transparent text-[15px] text-fg3 hover:bg-hover">✕</button>
               </div>
