@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-taskflow",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-taskflow \"node --test tests/rules\""
   },
   "dependencies": {
     "firebase": "^13.4.0",

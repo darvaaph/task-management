@@ -1,0 +1,6 @@
+{
+  "projects": {
+    "default": "demo-taskflow",
+    "prod": "taskflow-228ee"
+  }
+}

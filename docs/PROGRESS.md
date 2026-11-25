@@ -30,6 +30,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Notifikasi pengingat selama aplikasi terbuka: jadwal dari `rems`, izin lewat tombol, klik membuka tugas, tidak dobel setelah muat ulang | `components/Reminders.tsx`, `lib/logic.ts` (`reminderTimes`), `public/sw.js`, `store.tsx` (`markNotified`) | DESIGN §6.22 |
 | Detail tugas lebih pendek di HP: catatan di bawah judul, Durasi/Ulangi/Pengingat jadi baris ringkas, Hapus/Simpan menempel di bawah (isi sheet 1.288 → 839 px); semua properti dalam satu kartu RINCIAN, tanggal/jam lewat pemilih bawaan, sheet bisa ditarik ke bawah untuk ditutup | `components/TaskDetail.tsx` | DESIGN §6.11 |
 | Gerak mikro: centang memantul, warna centang/judul berganti halus, progress bar mengikuti token gerak (mati saat reduced motion) | `TaskRow.tsx`, `TaskDetail.tsx`, `ui.tsx`, `index.css` | DESIGN §6.32 |
+| Backend Fase 1A — Fondasi Firebase & Emulator: konfigurasi emulator (Auth 9099, Firestore 8080, Functions 5001, UI 4000), `.firebaserc` (`demo-taskflow` default, `prod` alias), `firestore.rules` awal (tolak semua), `firestore.indexes.json`, klien `src/lib/firebase.ts` (`persistentLocalCache` + `persistentMultipleTabManager`, tanpa Analytics), skrip `emulators` & `test:rules` | `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`, `src/lib/firebase.ts`, `package.json` | HANDOFF-FASE1 §4 (1A); belum disambungkan ke UI/store |
 
 ## Belum dibangun
 
@@ -46,5 +47,6 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
+- **25 Nov 2026** — Backend Fase 1A: fondasi Firebase lokal, emulator (`demo-taskflow`), `firestore.rules` awal (tolak semua), dan `src/lib/firebase.ts`.
 - **25 Nov 2026** — Pass 7: dukungan perangkat (tablet, sentuh, safe-area, pintasan per platform). Pass 8: gerak mikro centang dan progres. Pass 9: pilih area awal saat Daftar. Pass 10: tugas panduan. Pass 11: usap baris tugas; sheet profil kini tertutup saat Keluar. Pass 12: suara dan getaran. Pass 13: logo dan ikon aplikasi. Pass 14: PWA dan mode offline. Pass 15: notifikasi pengingat. Pass 16: detail tugas HP diringkas, catatan dipindah ke atas. Keputusan untuk area awal, tugas panduan, usap, dan gerak/suara/getaran dicatat di DESIGN 0.9 dan PRD.
 - **25 Nov 2026** — Pass 1: inti (shell, Hari Ini, Inbox, Proyek, detail, composer, tema). Pass 2: Jadwal. Pass 3: pencarian, Kelola proyek/area. Pass 4: akun, Pro, titik kunci, durasi/ulangi/pengingat, sambutan akun baru. Pass 5: Bagikan proyek & riwayat aktivitas. Pass 6: focus trap + tumpukan dialog (`Modal`/`Sheet`/`Search`), tanggal bebas di Proyek baru, tautan dapat diklik di catatan, filter area di Timeline, Urungkan untuk geser semua terlambat.
