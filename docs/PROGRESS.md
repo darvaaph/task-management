@@ -33,6 +33,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Backend Fase 1A — Fondasi Firebase & Emulator: konfigurasi emulator (Auth 9099, Firestore 8080, Functions 5001, UI 4000), `.firebaserc` (`demo-taskflow` default, `prod` alias), `firestore.rules` awal (tolak semua), `firestore.indexes.json`, klien `src/lib/firebase.ts` (`persistentLocalCache` + `persistentMultipleTabManager`, tanpa Analytics), skrip `emulators` & `test:rules` | `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`, `src/lib/firebase.ts`, `package.json` | HANDOFF-FASE1 §4 (1A); belum disambungkan ke UI/store |
 | Backend Fase 1B — Security Rules & tesnya: aturan Firestore untuk `users/{uid}` (isolasi pemilik, field server-only, `accent` Gratis vs Pro), `areas`, `tasks` (judul wajib 1–300 karakter, `dur`/`rec`/`rems` Gratis vs Pro, field audit immutable), `reminders`, penolakan penuh `projects`/`invites`/`purchases`, dan 21 tes unit `node --test` lewat emulator | `firestore.rules`, `tests/rules/firestore.test.mjs`, `package.json` | HANDOFF-FASE1 §4 (1B); `@firebase/rules-unit-testing` sebagai devDependency; belum disambungkan ke UI/store |
 | Backend Fase 1C — Login Google web & `onUserCreated`: Cloud Function `onUserCreated` membuat `users/{uid}` (`plan: 'free'`, `activeOwned: 0`), layar Masuk baru ("Lanjutkan dengan Google" + "Coba Mode Demo"), Pilih area awal menulis `users/{uid}/areas` dan `guideTasks()` ke `users/{uid}/tasks`, Keluar (`signOut`), Mode Demo tetap lokal | `functions/index.js`, `functions/package.json`, `firebase.json`, `src/store.tsx`, `src/views/AuthView.tsx`, `src/components/icons.tsx`, `docs/DESIGN.md` | HANDOFF-FASE1 §4 (1C); mutasi tugas/area berkelanjutan menyusul di 1D |
+| Backend Fase 1D — `store.tsx` tersambung ke Firestore untuk area & tugas lepas: listener realtime `onSnapshot` (`users/{uid}`, `areas`, `tasks`), `plan` hanya-baca dari `users/{uid}` sebagai dasar `isPro`, seluruh mutasi area & tugas lepas menulis ke Firestore (termasuk `moveTask` lintas lepas↔proyek dan Urungkan 6 detik online/offline), proyek/aktivitas/setelan tetap lokal, Mode Demo tetap lokal | `src/store.tsx` | HANDOFF-FASE1 §4 (1D); cache offline `persistentLocalCache` teruji |
 
 ## Belum dibangun
 
@@ -43,12 +44,13 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
-- Login Google dan setup awal (area + tugas panduan) sudah tersambung ke Firebase Emulator, sedangkan perubahan tugas/area berkelanjutan baru dipindah ke Firestore pada Langkah 1D.
+- Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
 - Tes otomatis baru mencakup Security Rules (`npm run test:rules`); belum ada tes UI atau linter. Pemeriksaan = `npm run build` + `npm run test:rules` + cek manual di browser.
 
 ## Riwayat
 
+- **25 Nov 2026** — Backend Fase 1D: `store.tsx` tersambung ke Firestore (`onSnapshot` + mutasi + Urungkan + offline) untuk area, tugas lepas, dan `plan` hanya-baca; proyek & Mode Demo tetap lokal.
 - **25 Nov 2026** — Backend Fase 1C: Cloud Function `onUserCreated`, login Google web (`signInWithPopup` + cadangan `signInWithRedirect`), layar Masuk baru (§6.20), Pilih area awal menulis area & tugas panduan ke Firestore, dan Keluar (`signOut`).
 - **25 Nov 2026** — Backend Fase 1B: Security Rules untuk `users`, `areas`, `tasks`, `reminders` (penolakan penuh `projects`/`invites`/`purchases`) dan 21 tes aturan `node --test` via Firestore Emulator.
 - **25 Nov 2026** — Backend Fase 1A: fondasi Firebase lokal, emulator (`demo-taskflow`), `firestore.rules` awal (tolak semua), dan `src/lib/firebase.ts`.

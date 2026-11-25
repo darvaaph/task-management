@@ -280,7 +280,7 @@ Dibuka dari "Kelola" di samping label AREA (sidebar desktop) atau menu profil (H
 
 ### 6.16 Toast dan Urungkan
 
-Toast biasa tampil 2,6 detik. Aksi yang menghapus atau menyembunyikan data (hapus tugas, hapus bagian, hapus area, arsipkan dan hapus proyek) **tidak meminta konfirmasi tambahan** kecuali dampaknya besar, tetapi selalu menampilkan toast 6 detik dengan tombol **Urungkan**. Urungkan mengembalikan tugas, proyek, dan area ke keadaan tepat sebelum aksi.
+Toast biasa tampil 2,6 detik. Aksi yang menghapus atau menyembunyikan data (hapus tugas, hapus bagian, hapus area, arsipkan dan hapus proyek) **tidak meminta konfirmasi tambahan** kecuali dampaknya besar, tetapi selalu menampilkan toast 6 detik dengan tombol **Urungkan**. Urungkan mengembalikan tugas, proyek, dan area ke keadaan tepat sebelum aksi (termasuk saat area dan tugas lepas tersimpan di cloud). Bila tulis atau Urungkan ke cloud ditolak server, tampil toast singkat: *"Perubahan gagal disimpan ke cloud"* atau *"Gagal mengurungkan perubahan"*.
 
 ### 6.17 Pilih tanggal
 
@@ -300,7 +300,7 @@ Mode Demo membuka semua fitur Pro dengan label DEMO PREVIEW.
 
 **Pola fitur terkunci:** fitur Pro **tetap terlihat** dengan badge PRO, tidak disembunyikan. Mengetuknya membuka layar Pro dengan kotak konteks ("Timeline termasuk di Pro…") dan baris tabel yang relevan ditandai. Fitur terkunci **tidak** dijadikan menu utama.
 
-**Layar Pro:** desktop modal 560 px, HP sheet 92 %. Isi: judul, kotak konteks (opsional), tabel Fitur | Gratis | Pro, harga, tombol "Beli Pro" (aksen), "Nanti saja", catatan pembayaran (web atau Google Play, status Pro tersimpan di akun). Pengguna Pro melihat "Pro sudah aktif" tanpa tombol beli. Harga Rp99.000 di prototipe hanya contoh.
+**Layar Pro:** desktop modal 560 px, HP sheet 92 %. Isi: judul, kotak konteks (opsional), tabel Fitur | Gratis | Pro, harga, tombol "Beli Pro" (aksen), "Nanti saja", catatan pembayaran (web atau Google Play, status Pro tersimpan di akun). Pengguna Pro melihat "Pro sudah aktif" tanpa tombol beli. Harga Rp99.000 di prototipe hanya contoh. Sebelum pembayaran Xendit/Google Play aktif, menekan "Beli Pro" pada akun Google menampilkan toast *"Pembayaran Pro belum aktif di tahap ini."* (status `plan` dibaca hanya-baca dari cloud).
 
 ### 6.19 Tugas berulang dan durasi
 
@@ -449,6 +449,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.13 (25 Nov 2026):** Catatan toast kegagalan sinkronisasi/Urungkan cloud (§6.16) dan pesan tombol Beli Pro akun Google sebelum pembayaran aktif (§6.18).
 - **0.12 (25 Nov 2026):** Layar Masuk diperbarui ke login Google + Mode Demo (§6.20) dan Pilih area awal setelah login Google pertama (§6.29).
 - **0.11 (25 Nov 2026):** Area di proyek bersama bersifat per anggota (tanpa area otomatis), halaman undangan tanpa area pemilik, Simulasi hanya di demo.
 - **0.10 (25 Nov 2026):** Logo "Cincin terbuka" (5.1), favicon, dan ikon aplikasi.

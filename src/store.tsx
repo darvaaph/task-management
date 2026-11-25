@@ -7,7 +7,19 @@ import {
   signInWithRedirect,
   signOut as firebaseSignOut,
 } from 'firebase/auth'
-import { collection, doc, getDocs, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+  type DocumentData,
+  type QueryDocumentSnapshot,
+  type UpdateData,
+} from 'firebase/firestore'
 import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS, FREE_MEMBER_QUOTA, FREE_PROJECT_QUOTA, MEMBER_POOL, PEOPLE, PRO_MEMBER_QUOTA, STATUS } from './lib/constants'
 import { addDays, diffDays, fmtDay, today } from './lib/dates'
 import { auth, db } from './lib/firebase'
@@ -28,6 +40,8 @@ export interface Account {
   loggedIn: boolean
   /** Demo mode opens every Pro feature, labelled DEMO PREVIEW. */
   demo: boolean
+  /** Signed-in Firebase UID, used to isolate Phase-1 local project data per user on reload. */
+  uid?: string
   name: string
   plan: 'free' | 'pro'
   accent: Accent
@@ -43,6 +57,7 @@ export interface Account {
 }
 
 const ACCOUNT0: Account = { loggedIn: false, demo: false, name: 'Anda', plan: 'free', accent: 'indigo', onboarding: false, checkedAreas: false }
+const EMPTY_DATA: Data = { tasks: [], projects: [], areas: [], activity: [] }
 
 export interface UI {
   view: View
@@ -90,10 +105,10 @@ const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
 const statusActivity = (actor: string, title: string, status: Task['status']) =>
   status === 'done' ? `${actor} menyelesaikan "${title}"` : `${actor} memindah "${title}" ke ${STATUS[status]}`
 
-const VALID_ACCENTS: Accent[] = ['indigo', 'teal', 'tangerine', 'forest']
 const VALID_STATUS: Status[] = ['todo', 'in_progress', 'done']
 const VALID_PRIO: Priority[] = ['high', 'med', 'low']
 const VALID_REC: Recurrence[] = ['daily', 'weekly', 'weekdays', 'monthly']
+const VALID_REMS = ['m10', 'm30', 'h1', 'd0', 'd1', 'd3']
 
 const authErrMsg = (err: unknown) => {
   const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
@@ -102,9 +117,12 @@ const authErrMsg = (err: unknown) => {
   return 'Gagal masuk dengan Google. Coba lagi.'
 }
 
-function docToTask(id: string, d: Record<string, unknown>): Task {
-  return {
-    id,
+function docToTask(snap: QueryDocumentSnapshot): { task: Task; createdAtMs: number | null } {
+  const d = snap.data()
+  const rawCreated = d.createdAt
+  const createdAtMs = rawCreated && typeof rawCreated.toMillis === 'function' ? rawCreated.toMillis() : null
+  const task: Task = {
+    id: snap.id,
     title: typeof d.title === 'string' ? d.title : '',
     project: null,
     area: typeof d.area === 'string' ? d.area : null,
@@ -121,11 +139,89 @@ function docToTask(id: string, d: Record<string, unknown>): Task {
     ...(Array.isArray(d.rems) ? { rems: d.rems.filter((x): x is string => typeof x === 'string') } : {}),
     ...(d.guide === true ? { guide: true } : {}),
   }
+  return { task, createdAtMs }
+}
+
+/** Build a Firestore-rules-compliant payload for creating/restoring a loose task document. */
+function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean): Record<string, unknown> {
+  const title = t.title.trim().slice(0, 300) || 'Tanpa judul'
+  const dur = pro && typeof t.dur === 'number' && t.dur > 0 ? Math.min(1440, Math.round(t.dur)) : null
+  const rec = t.rec && (pro || t.rec === 'daily' || t.rec === 'weekly') ? t.rec : null
+  const payload: Record<string, unknown> = {
+    title,
+    project: null,
+    area: t.area ?? null,
+    section: null,
+    assignee: null,
+    status: t.status,
+    prio: t.prio,
+    start: t.start ?? null,
+    due: t.due ?? null,
+    time: t.time ?? null,
+    dur,
+    rec,
+    notes: (t.notes ?? '').slice(0, 10000),
+    createdBy: ownerUid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    completedAt: t.status === 'done' ? serverTimestamp() : null,
+  }
+  if (t.rems !== undefined) {
+    payload.rems = t.rems.filter(k => VALID_REMS.includes(k)).slice(0, pro ? 6 : 1)
+  }
+  if (t.guide === true) {
+    payload.guide = true
+  }
+  return payload
+}
+
+/** Map a partial Task update to Firestore fields; returns null when nothing valid should be sent yet. */
+function taskPatchToCloud(patch: Partial<Task>): UpdateData<DocumentData> | null {
+  const out: UpdateData<DocumentData> = {}
+  if (patch.title !== undefined) {
+    const trimmed = patch.title.trim().slice(0, 300)
+    // Skip blank intermediate edits while user is clearing/retyping the title input.
+    if (trimmed) out.title = trimmed
+  }
+  if (patch.area !== undefined) out.area = patch.area
+  if (patch.section !== undefined) out.section = patch.section
+  if (patch.assignee !== undefined) out.assignee = patch.assignee
+  if (patch.status !== undefined) {
+    out.status = patch.status
+    out.completedAt = patch.status === 'done' ? serverTimestamp() : null
+  }
+  if (patch.prio !== undefined) out.prio = patch.prio
+  if (patch.start !== undefined) out.start = patch.start
+  if (patch.due !== undefined) out.due = patch.due
+  if (patch.time !== undefined) out.time = patch.time
+  if (patch.dur !== undefined) out.dur = patch.dur
+  if (patch.rec !== undefined) out.rec = patch.rec
+  if (patch.notes !== undefined) out.notes = patch.notes.slice(0, 10000)
+  if (patch.rems !== undefined) out.rems = patch.rems.filter(k => VALID_REMS.includes(k))
+  if (patch.guide !== undefined) out.guide = patch.guide
+  if (!Object.keys(out).length) return null
+  out.updatedAt = serverTimestamp()
+  return out
+}
+
+function sortCloudTasks(items: { task: Task; createdAtMs: number | null }[]): Task[] {
+  return [...items]
+    .sort((a, b) => {
+      // Pending local writes (null serverTimestamp while offline/unacked) stay at the top, newest id first.
+      if (a.createdAtMs == null && b.createdAtMs == null) return b.task.id.localeCompare(a.task.id)
+      if (a.createdAtMs == null) return -1
+      if (b.createdAtMs == null) return 1
+      return b.createdAtMs - a.createdAtMs || a.task.id.localeCompare(b.task.id)
+    })
+    .map(x => x.task)
 }
 
 function useStoreValue() {
   const initial = useMemo(load, [])
-  const [data, setData] = useState<Data>(initial.data)
+  // Local store: used in Demo/signed-out mode, and holds Phase-1 local projects, project tasks, and activity when signed in.
+  const [localData, setLocalData] = useState<Data>(initial.data)
+  const [cloudAreas, setCloudAreas] = useState<Area[]>([])
+  const [cloudTasks, setCloudTasks] = useState<Task[]>([])
   const [theme, setTheme] = useState<Theme>(initial.theme)
   const [account, setAccountState] = useState<Account>(initial.account)
   const [ui, setUIState] = useState<UI>(UI0)
@@ -135,10 +231,31 @@ function useStoreValue() {
   const [authBusy, setAuthBusy] = useState(false)
   const [authStatus, setAuthStatus] = useState('')
   const [authError, setAuthError] = useState('')
+
   const timer = useRef<number>(undefined)
   const handledUid = useRef<string | null>(null)
+  const cloudAreaOrdersRef = useRef<Map<string, number>>(new Map())
+
+  const cloudActive = Boolean(uid && account.loggedIn && !account.demo)
+  const cloudUidRef = useRef<string | null>(null)
+  cloudUidRef.current = cloudActive ? uid : null
+
+  const data = useMemo<Data>(() => {
+    if (!cloudActive) return localData
+    return {
+      areas: cloudAreas,
+      tasks: [...cloudTasks, ...localData.tasks.filter(t => t.project != null)],
+      projects: localData.projects,
+      activity: localData.activity,
+    }
+  }, [cloudActive, cloudAreas, cloudTasks, localData])
+
   const dataRef = useRef(data)
   dataRef.current = data
+  const localDataRef = useRef(localData)
+  localDataRef.current = localData
+  const cloudTasksRef = useRef(cloudTasks)
+  cloudTasksRef.current = cloudTasks
   const accountRef = useRef(account)
   accountRef.current = account
 
@@ -146,11 +263,12 @@ function useStoreValue() {
     document.documentElement.dataset.theme = theme
     document.documentElement.dataset.accent = account.accent
     try {
-      localStorage.setItem(KEY, JSON.stringify({ data, theme, account }))
+      // Persist only localData; cloud areas and loose tasks live in Firestore's persistentLocalCache.
+      localStorage.setItem(KEY, JSON.stringify({ data: localData, theme, account }))
     } catch {
       /* private mode: keep working in memory */
     }
-  }, [data, theme, account])
+  }, [localData, theme, account])
 
   // Keep Mode Demo completely local; only listen to Firebase Auth outside Demo Mode.
   useEffect(() => {
@@ -158,11 +276,14 @@ function useStoreValue() {
 
     let active = true
     let unsubProfile: (() => void) | null = null
+    let unsubAreaGate: (() => void) | null = null
     let waitTimer: number | undefined
 
     const clearProfileWatch = () => {
       unsubProfile?.()
       unsubProfile = null
+      unsubAreaGate?.()
+      unsubAreaGate = null
       window.clearTimeout(waitTimer)
     }
 
@@ -175,12 +296,15 @@ function useStoreValue() {
     })
 
     const unsubAuth = onAuthStateChanged(auth, fbUser => {
-      if (!active || (accountRef.current.demo && accountRef.current.loggedIn)) return
+      if (!active || accountRef.current.demo) return
       clearProfileWatch()
 
       if (!fbUser) {
         handledUid.current = null
         setUid(null)
+        setCloudAreas([])
+        setCloudTasks([])
+        cloudAreaOrdersRef.current = new Map()
         setNeedsAreas(false)
         setAuthBusy(false)
         setAuthStatus('')
@@ -207,86 +331,82 @@ function useStoreValue() {
 
       unsubProfile = onSnapshot(
         doc(db, 'users', fbUser.uid),
-        async snap => {
+        snap => {
           if (!active || !snap.exists()) return
           window.clearTimeout(waitTimer)
           setAuthError('')
 
           const p = snap.data()
           const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : (fbUser.displayName?.trim() || 'Anda')
+          // plan is read-only from Firestore and is the source of truth for s.isPro on signed-in accounts.
           const plan: 'free' | 'pro' = p.plan === 'pro' ? 'pro' : 'free'
-          const accent: Accent = plan === 'pro' && VALID_ACCENTS.includes(p.accent) ? p.accent : 'indigo'
 
           if (handledUid.current === fbUser.uid) {
-            setAccountState(a => ({ ...a, name, plan, accent }))
+            setAccountState(a => ({
+              ...a,
+              name,
+              plan,
+              accent: plan === 'pro' ? a.accent : 'indigo',
+            }))
             return
           }
           handledUid.current = fbUser.uid
 
-          try {
-            const areasSnap = await getDocs(collection(db, 'users', fbUser.uid, 'areas'))
-            if (!active) return
+          // Determine first login vs returning user via onSnapshot so offline IndexedDB cache also works on reload.
+          unsubAreaGate = onSnapshot(
+            collection(db, 'users', fbUser.uid, 'areas'),
+            areasSnap => {
+              if (!active) return
+              // Wait for server confirmation when an empty snapshot came only from a cold local cache.
+              if (areasSnap.empty && areasSnap.metadata.fromCache) return
+              unsubAreaGate?.()
+              unsubAreaGate = null
 
-            if (areasSnap.empty) {
-              // First login: collect starting areas before entering the workspace.
+              if (areasSnap.empty) {
+                setAccountState(a => ({
+                  ...a,
+                  uid: fbUser.uid,
+                  loggedIn: false,
+                  demo: false,
+                  name,
+                  plan,
+                  accent: plan === 'pro' ? a.accent : 'indigo',
+                  onboarding: true,
+                  checkedAreas: false,
+                }))
+                setNeedsAreas(true)
+                setAuthBusy(false)
+                setAuthStatus('')
+                return
+              }
+
+              // Avoid leaking demo seed() projects or another account's local projects into this user.
+              if (accountRef.current.uid !== fbUser.uid) {
+                setLocalData(EMPTY_DATA)
+              }
               setAccountState(a => ({
                 ...a,
-                loggedIn: false,
+                uid: fbUser.uid,
+                loggedIn: true,
                 demo: false,
                 name,
                 plan,
-                accent,
-                onboarding: true,
-                checkedAreas: false,
+                accent: plan === 'pro' ? a.accent : 'indigo',
+                onboarding: typeof p.onboarding === 'boolean' ? p.onboarding : a.onboarding,
+                checkedAreas: typeof p.checkedAreas === 'boolean' ? p.checkedAreas : a.checkedAreas,
               }))
-              setNeedsAreas(true)
+              setNeedsAreas(false)
               setAuthBusy(false)
               setAuthStatus('')
-              return
-            }
-
-            const tasksSnap = await getDocs(collection(db, 'users', fbUser.uid, 'tasks'))
-            if (!active) return
-
-            const areas: Area[] = areasSnap.docs
-              .map(d => {
-                const x = d.data()
-                return {
-                  id: d.id,
-                  name: typeof x.name === 'string' ? x.name : d.id,
-                  color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
-                  order: typeof x.order === 'number' ? x.order : 999,
-                }
-              })
-              .sort((a, b) => a.order - b.order)
-              .map(({ id, name: n, color }) => ({ id, name: n, color }))
-
-            const cloudTasks = tasksSnap.docs.map(d => docToTask(d.id, d.data()))
-            setData(d => ({
-              ...d,
-              areas,
-              tasks: [...cloudTasks, ...d.tasks.filter(t => t.project != null)],
-            }))
-            setAccountState(a => ({
-              ...a,
-              loggedIn: true,
-              demo: false,
-              name,
-              plan,
-              accent,
-              onboarding: typeof p.onboarding === 'boolean' ? p.onboarding : true,
-              checkedAreas: Boolean(p.checkedAreas),
-            }))
-            setNeedsAreas(false)
-            setAuthBusy(false)
-            setAuthStatus('')
-          } catch {
-            if (!active) return
-            handledUid.current = null
-            setAuthBusy(false)
-            setAuthStatus('')
-            setAuthError('Gagal memuat data akun. Coba lagi.')
-          }
+            },
+            () => {
+              if (!active) return
+              handledUid.current = null
+              setAuthBusy(false)
+              setAuthStatus('')
+              setAuthError('Gagal memuat data akun. Coba lagi.')
+            },
+          )
         },
         () => {
           if (!active) return
@@ -305,8 +425,43 @@ function useStoreValue() {
     }
   }, [account.demo])
 
+  // Subscribe to cloud areas and loose tasks while signed in to a real account.
+  useEffect(() => {
+    if (!cloudActive || !uid) return
+
+    const unsubAreas = onSnapshot(collection(db, 'users', uid, 'areas'), snap => {
+      const orders = new Map<string, number>()
+      const rows = snap.docs
+        .map(d => {
+          const x = d.data()
+          const order = typeof x.order === 'number' ? x.order : 999
+          orders.set(d.id, order)
+          return {
+            id: d.id,
+            name: typeof x.name === 'string' ? x.name : d.id,
+            color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
+            order,
+          }
+        })
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+      cloudAreaOrdersRef.current = orders
+      setCloudAreas(rows.map(({ id, name, color }) => ({ id, name, color })))
+    })
+
+    const unsubTasks = onSnapshot(collection(db, 'users', uid, 'tasks'), snap => {
+      setCloudTasks(sortCloudTasks(snap.docs.map(docToTask)))
+    })
+
+    return () => {
+      unsubAreas()
+      unsubTasks()
+    }
+  }, [cloudActive, uid])
+
   const setAccount = useCallback((patch: Partial<Account>) => setAccountState(a => ({ ...a, ...patch })), [])
   const isPro = account.plan === 'pro' || account.demo
+  const isProRef = useRef(isPro)
+  isProRef.current = isPro
   const openPro = useCallback((ctx: ProCtx = 'general') => setUIState(u => ({ ...u, pro: ctx })), [])
 
   const setUI = useCallback((patch: Partial<UI>) => setUIState(u => ({ ...u, ...patch })), [])
@@ -317,25 +472,60 @@ function useStoreValue() {
     timer.current = window.setTimeout(() => setToast(null), undo ? 6000 : 2600)
   }, [])
 
-  /** Apply a change and show a toast with Urungkan that restores the data exactly as before. */
+  /** Fire-and-forget wrapper so offline Firestore writes update cache immediately without blocking UI/toast. */
+  const runCloud = useCallback((op: Promise<unknown>, fallbackMsg = 'Perubahan gagal disimpan ke cloud') => {
+    void op.catch(() => say(fallbackMsg))
+  }, [say])
+
+  /** Apply a local change and show a 6s toast with Urungkan that restores localData exactly as before. */
   const undoable = useCallback((msg: string, mutate: (d: Data) => Data) => {
-    const before = dataRef.current
-    setData(mutate)
+    const before = localDataRef.current
+    setLocalData(mutate)
     say(msg, () => {
-      setData(before)
+      setLocalData(before)
       setToast(null)
     })
   }, [say])
 
+  /** Apply a cloud (and optional local) change with a 6s Urungkan toast that works both online and offline. */
+  const undoableCloud = useCallback((
+    msg: string,
+    applyCloud: () => Promise<unknown>,
+    revertCloud: () => Promise<unknown>,
+    mutateLocal?: (d: Data) => Data,
+  ) => {
+    const beforeLocal = localDataRef.current
+    if (mutateLocal) setLocalData(mutateLocal)
+    runCloud(applyCloud())
+    say(msg, () => {
+      if (mutateLocal) setLocalData(beforeLocal)
+      runCloud(revertCloud(), 'Gagal mengurungkan perubahan')
+      setToast(null)
+    })
+  }, [runCloud, say])
+
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
-    setData(d => {
-      const t0 = d.tasks.find(x => x.id === id)
-      const activity = t0?.project && patch.status && patch.status !== t0.status
-        ? pushActivity(d.activity, t0.project, statusActivity(accountRef.current.name, t0.title, patch.status))
+    const curUid = cloudUidRef.current
+    const t0 = dataRef.current.tasks.find(x => x.id === id)
+    if (curUid && t0 && !t0.project) {
+      // Keep controlled inputs responsive when the user temporarily clears title while retyping.
+      if (patch.title !== undefined && !patch.title.trim()) {
+        setCloudTasks(list => list.map(t => (t.id === id ? { ...t, ...patch } : t)))
+      }
+      const cloudPatch = taskPatchToCloud(patch)
+      if (cloudPatch) {
+        runCloud(updateDoc(doc(db, 'users', curUid, 'tasks', id), cloudPatch))
+      }
+      return
+    }
+    setLocalData(d => {
+      const lt0 = d.tasks.find(x => x.id === id)
+      const activity = lt0?.project && patch.status && patch.status !== lt0.status
+        ? pushActivity(d.activity, lt0.project, statusActivity(accountRef.current.name, lt0.title, patch.status))
         : d.activity
       return { ...d, tasks: d.tasks.map(t => (t.id === id ? { ...t, ...patch } : t)), activity }
     })
-  }, [])
+  }, [runCloud])
 
   const toggleTask = useCallback((id: string) => {
     const t = dataRef.current.tasks.find(x => x.id === id)
@@ -343,6 +533,16 @@ function useStoreValue() {
     if (t.status !== 'done') feedback('done', accountRef.current)
     if (t.rec && t.status !== 'done') {
       const n = nextActiveOccurrence(t)
+      const curUid = cloudUidRef.current
+      if (curUid && !t.project) {
+        const ref = doc(db, 'users', curUid, 'tasks', id)
+        undoableCloud(
+          `Selesai. Diulang ke ${fmtDay(n)}`,
+          () => updateDoc(ref, { due: n, start: null, status: 'todo', updatedAt: serverTimestamp(), completedAt: null }),
+          () => updateDoc(ref, { due: t.due, start: t.start, status: t.status, updatedAt: serverTimestamp(), completedAt: null }),
+        )
+        return
+      }
       undoable(`Selesai. Diulang ke ${fmtDay(n)}`, d => ({
         ...d,
         tasks: d.tasks.map(x => (x.id === id ? { ...x, due: n, start: null, status: 'todo' } : x)),
@@ -351,47 +551,139 @@ function useStoreValue() {
       return
     }
     updateTask(id, { status: t.status === 'done' ? 'todo' : 'done' })
-  }, [undoable, updateTask])
+  }, [undoable, undoableCloud, updateTask])
 
   const setStatus = useCallback((id: string, status: Task['status'], withUndo = false) => {
-    if (status === 'done' && dataRef.current.tasks.find(x => x.id === id)?.status !== 'done') feedback('done', accountRef.current)
+    const t0 = dataRef.current.tasks.find(x => x.id === id)
+    if (status === 'done' && t0?.status !== 'done') feedback('done', accountRef.current)
     if (withUndo) {
+      const curUid = cloudUidRef.current
+      if (curUid && t0 && !t0.project) {
+        const ref = doc(db, 'users', curUid, 'tasks', id)
+        const prev = t0.status
+        undoableCloud(
+          `Dipindah ke ${STATUS[status]}`,
+          () => updateDoc(ref, { status, updatedAt: serverTimestamp(), completedAt: status === 'done' ? serverTimestamp() : null }),
+          () => updateDoc(ref, { status: prev, updatedAt: serverTimestamp(), completedAt: prev === 'done' ? serverTimestamp() : null }),
+        )
+        return
+      }
       undoable(`Dipindah ke ${STATUS[status]}`, d => {
-        const t0 = d.tasks.find(x => x.id === id)
-        const activity = t0?.project && status !== t0.status
-          ? pushActivity(d.activity, t0.project, statusActivity(accountRef.current.name, t0.title, status))
+        const lt0 = d.tasks.find(x => x.id === id)
+        const activity = lt0?.project && status !== lt0.status
+          ? pushActivity(d.activity, lt0.project, statusActivity(accountRef.current.name, lt0.title, status))
           : d.activity
         return { ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, status } : x)), activity }
       })
     } else updateTask(id, { status })
-  }, [undoable, updateTask])
+  }, [undoable, undoableCloud, updateTask])
 
   const deleteTask = useCallback((id: string) => {
     setUI({ taskId: null })
+    const curUid = cloudUidRef.current
+    const t0 = dataRef.current.tasks.find(x => x.id === id)
+    if (curUid && t0 && !t0.project) {
+      const ref = doc(db, 'users', curUid, 'tasks', id)
+      const restore = taskToCloudDoc(t0, curUid, isProRef.current)
+      undoableCloud(
+        'Tugas dihapus',
+        () => deleteDoc(ref),
+        () => setDoc(ref, restore),
+      )
+      return
+    }
     undoable('Tugas dihapus', d => ({ ...d, tasks: d.tasks.filter(x => x.id !== id) }))
-  }, [setUI, undoable])
+  }, [setUI, undoable, undoableCloud])
 
   const clearGuides = useCallback(() => {
+    const curUid = cloudUidRef.current
+    if (curUid) {
+      const guides = cloudTasksRef.current.filter(t => t.guide)
+      if (!guides.length) return
+      const pro = isProRef.current
+      undoableCloud(
+        'Tugas panduan dihapus',
+        () => {
+          const batch = writeBatch(db)
+          guides.forEach(t => batch.delete(doc(db, 'users', curUid, 'tasks', t.id)))
+          return batch.commit()
+        },
+        () => {
+          const batch = writeBatch(db)
+          guides.forEach(t => batch.set(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, pro)))
+          return batch.commit()
+        },
+      )
+      return
+    }
     undoable('Tugas panduan dihapus', d => ({ ...d, tasks: d.tasks.filter(t => !t.guide) }))
-  }, [undoable])
+  }, [undoable, undoableCloud])
 
   const moveToToday = useCallback((id: string) => updateTask(id, { due: today(), start: null }), [updateTask])
+
   const moveAllOverdue = useCallback(() => {
     const t0 = today()
-    const n = dataRef.current.tasks.filter(t => isOverdue(t, t0)).length
+    const curUid = cloudUidRef.current
+    if (curUid) {
+      const cloudOverdue = cloudTasksRef.current.filter(t => isOverdue(t, t0))
+      const localOverdue = localDataRef.current.tasks.filter(t => t.project != null && isOverdue(t, t0))
+      const total = cloudOverdue.length + localOverdue.length
+      if (!total) return
+      const mutateLocal = localOverdue.length
+        ? (d: Data) => ({
+            ...d,
+            tasks: d.tasks.map(t => (t.project != null && isOverdue(t, t0) ? { ...t, due: t0, start: null } : t)),
+          })
+        : undefined
+      if (!cloudOverdue.length) {
+        undoable(`${total} tugas digeser ke Hari Ini`, mutateLocal!)
+        return
+      }
+      undoableCloud(
+        `${total} tugas digeser ke Hari Ini`,
+        () => {
+          const batch = writeBatch(db)
+          cloudOverdue.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { due: t0, start: null, updatedAt: serverTimestamp() }))
+          return batch.commit()
+        },
+        () => {
+          const batch = writeBatch(db)
+          cloudOverdue.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { due: t.due, start: t.start, updatedAt: serverTimestamp() }))
+          return batch.commit()
+        },
+        mutateLocal,
+      )
+      return
+    }
+    const n = localDataRef.current.tasks.filter(t => isOverdue(t, t0)).length
     if (!n) return
     undoable(`${n} tugas digeser ke Hari Ini`, d => ({
       ...d,
       tasks: d.tasks.map(t => (isOverdue(t, t0) ? { ...t, due: t0, start: null } : t)),
     }))
-  }, [undoable])
+  }, [undoable, undoableCloud])
 
   const moveTask = useCallback((t: Task, v: Dest) => {
     const d = parseDest(v)
     const np = d.project ? dataRef.current.projects.find(p => p.id === d.project) : null
     const assignee = np ? (t.assignee && np.members.includes(t.assignee) ? t.assignee : 'me') : null
+    const curUid = cloudUidRef.current
+
+    // In Phase 1, loose tasks live in Firestore and project tasks remain local; crossing the boundary moves the record.
+    if (curUid && !t.project && d.project) {
+      const moved: Task = { ...t, project: d.project, area: null, section: d.section, assignee }
+      runCloud(deleteDoc(doc(db, 'users', curUid, 'tasks', t.id)))
+      setLocalData(x => ({ ...x, tasks: [moved, ...x.tasks.filter(k => k.id !== t.id)] }))
+      return
+    }
+    if (curUid && t.project && !d.project) {
+      const moved: Task = { ...t, project: null, area: d.area, section: null, assignee: null }
+      setLocalData(x => ({ ...x, tasks: x.tasks.filter(k => k.id !== t.id) }))
+      runCloud(setDoc(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(moved, curUid, isProRef.current)))
+      return
+    }
     updateTask(t.id, { project: d.project, area: d.area, section: d.section, assignee })
-  }, [updateTask])
+  }, [runCloud, updateTask])
 
   const addTask = useCallback((input: { title: string; dest: Dest; due: ISODate | null; prio: Priority; pic: string | null }) => {
     const d = parseDest(input.dest)
@@ -401,13 +693,18 @@ function useStoreValue() {
       assignee: p ? (input.pic && p.members.includes(input.pic) ? input.pic : 'me') : null,
       status: 'todo', prio: input.prio, start: null, due: input.due, time: null, notes: '', rec: null, dur: null,
     }
-    setData(x => ({
+    const curUid = cloudUidRef.current
+    if (curUid && !d.project) {
+      runCloud(setDoc(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, isProRef.current)))
+      return t
+    }
+    setLocalData(x => ({
       ...x,
       tasks: [t, ...x.tasks],
       activity: d.project ? pushActivity(x.activity, d.project, `${accountRef.current.name} menambahkan "${input.title}"`) : x.activity,
     }))
     return t
-  }, [])
+  }, [runCloud])
 
   /** Move a task to another day (and optionally time). A task with a start date shifts as a whole. */
   const moveDue = useCallback((id: string, day: ISODate, time?: string | null) => {
@@ -416,20 +713,32 @@ function useStoreValue() {
     const patch: Partial<Task> = { due: day, start: t.start && t.due ? addDays(day, -diffDays(t.due, t.start)) : null }
     if (time !== undefined) patch.time = time
     const suffix = patch.time ? ' · ' + patch.time : time === null && t.time ? ' · tanpa jam' : ''
+    const curUid = cloudUidRef.current
+    if (curUid && !t.project) {
+      const ref = doc(db, 'users', curUid, 'tasks', id)
+      const prev: UpdateData<DocumentData> = { due: t.due, start: t.start, updatedAt: serverTimestamp() }
+      if (time !== undefined) prev.time = t.time
+      undoableCloud(
+        `Dipindah ke ${fmtDay(day)}${suffix}`,
+        () => updateDoc(ref, { ...patch, updatedAt: serverTimestamp() }),
+        () => updateDoc(ref, prev),
+      )
+      return
+    }
     undoable(`Dipindah ke ${fmtDay(day)}${suffix}`, d => ({ ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, ...patch } : x)) }))
-  }, [undoable])
+  }, [undoable, undoableCloud])
 
-  const updateProject = useCallback((id: string, patch: Partial<Project>) => setData(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...patch } : p)) })), [])
+  const updateProject = useCallback((id: string, patch: Partial<Project>) => setLocalData(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...patch } : p)) })), [])
 
-  /* ----- Kelola proyek: changes save immediately; destructive ones show Urungkan ----- */
+  /* ----- Kelola proyek: Phase 1 stays local; Phase 2 moves to Firestore ----- */
   const mapProject = (d: Data, id: string, fn: (p: Project) => Project): Data => ({ ...d, projects: d.projects.map(p => (p.id === id ? fn(p) : p)) })
 
-  const renameSection = useCallback((pid: string, old: string, name: string) => setData(d => ({
+  const renameSection = useCallback((pid: string, old: string, name: string) => setLocalData(d => ({
     ...mapProject(d, pid, p => ({ ...p, sections: p.sections.map(x => (x === old ? name : x)) })),
     tasks: d.tasks.map(t => (t.project === pid && t.section === old ? { ...t, section: name } : t)),
   })), [])
 
-  const addSection = useCallback((pid: string, name: string) => setData(d => mapProject(d, pid, p => (p.sections.includes(name) ? p : { ...p, sections: [...p.sections, name] }))), [])
+  const addSection = useCallback((pid: string, name: string) => setLocalData(d => mapProject(d, pid, p => (p.sections.includes(name) ? p : { ...p, sections: [...p.sections, name] }))), [])
 
   const deleteSection = useCallback((pid: string, name: string) => undoable(`Bagian "${name}" dihapus`, d => ({
     ...mapProject(d, pid, p => ({ ...p, sections: p.sections.filter(x => x !== name) })),
@@ -446,7 +755,7 @@ function useStoreValue() {
       openPro('proj')
       return false
     }
-    setData(d => mapProject(d, p.id, x => ({ ...x, archived: false })))
+    setLocalData(d => mapProject(d, p.id, x => ({ ...x, archived: false })))
     say('Proyek dikembalikan')
     return true
   }, [say, isPro, openPro])
@@ -495,7 +804,7 @@ function useStoreValue() {
       return
     }
     const name = PEOPLE[nx].name
-    setData(d => ({
+    setLocalData(d => ({
       ...mapProject(d, pid, x => (x.members.includes(nx) ? x : { ...x, members: [...x.members, nx] })),
       activity: pushActivity(d.activity, pid, `${name} bergabung lewat tautan undangan`),
     }))
@@ -503,33 +812,100 @@ function useStoreValue() {
   }, [isPro, say])
 
   /* ----- Kelola area ----- */
-  const updateArea = useCallback((id: string, patch: Partial<Area>) => setData(d => ({
-    ...d,
-    areas: d.areas.map(a => (a.id === id ? { ...a, ...patch } : a)),
-    // A project's colour follows its area.
-    projects: patch.color ? d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)) : d.projects,
-  })), [])
+  const updateArea = useCallback((id: string, patch: Partial<Area>) => {
+    const curUid = cloudUidRef.current
+    if (curUid) {
+      const cloudPatch: UpdateData<DocumentData> = {}
+      if (patch.name !== undefined) {
+        const trimmed = patch.name.trim().slice(0, 60)
+        // Allow clearing the controlled input while retyping without tripping non-empty rules.
+        if (!trimmed) {
+          setCloudAreas(list => list.map(a => (a.id === id ? { ...a, ...patch } : a)))
+        } else {
+          cloudPatch.name = trimmed
+        }
+      }
+      if (patch.color !== undefined) {
+        cloudPatch.color = patch.color
+        // A local project's colour still follows its area.
+        setLocalData(d => ({
+          ...d,
+          projects: d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)),
+        }))
+      }
+      if (Object.keys(cloudPatch).length) {
+        runCloud(updateDoc(doc(db, 'users', curUid, 'areas', id), cloudPatch))
+      }
+      return
+    }
+    setLocalData(d => ({
+      ...d,
+      areas: d.areas.map(a => (a.id === id ? { ...a, ...patch } : a)),
+      // A project's colour follows its area.
+      projects: patch.color ? d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)) : d.projects,
+    }))
+  }, [runCloud])
 
-  const addArea = useCallback((name: string) => setData(d => {
-    const used = d.areas.map(a => a.color)
-    const color = AREA_COLORS.find(c => !used.includes(c)) ?? AREA_COLORS[d.areas.length % AREA_COLORS.length]
-    return { ...d, areas: [...d.areas, { id: 'a' + Date.now(), name, color }] }
-  }), [])
+  const addArea = useCallback((name: string) => {
+    const trimmed = name.trim().slice(0, 60)
+    if (!trimmed) return
+    const curUid = cloudUidRef.current
+    if (curUid) {
+      const curAreas = dataRef.current.areas
+      const used = curAreas.map(a => a.color)
+      const color = AREA_COLORS.find(c => !used.includes(c)) ?? AREA_COLORS[curAreas.length % AREA_COLORS.length]
+      const maxOrder = Array.from(cloudAreaOrdersRef.current.values()).reduce((m, v) => Math.max(m, v), -1)
+      const id = 'a' + Date.now()
+      runCloud(setDoc(doc(db, 'users', curUid, 'areas', id), { name: trimmed, color, order: maxOrder + 1 }))
+      return
+    }
+    setLocalData(d => {
+      const used = d.areas.map(a => a.color)
+      const color = AREA_COLORS.find(c => !used.includes(c)) ?? AREA_COLORS[d.areas.length % AREA_COLORS.length]
+      return { ...d, areas: [...d.areas, { id: 'a' + Date.now(), name: trimmed, color }] }
+    })
+  }, [runCloud])
 
   const deleteArea = useCallback((a: Area) => {
     setUIState(u => ({ ...u, inboxArea: 'all', projArea: 'all' }))
+    const curUid = cloudUidRef.current
+    if (curUid) {
+      const prevOrder = cloudAreaOrdersRef.current.get(a.id) ?? 0
+      const affected = cloudTasksRef.current.filter(t => t.area === a.id)
+      const areaRef = doc(db, 'users', curUid, 'areas', a.id)
+      undoableCloud(
+        `Area "${a.name}" dihapus`,
+        () => {
+          const batch = writeBatch(db)
+          batch.delete(areaRef)
+          affected.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { area: null, updatedAt: serverTimestamp() }))
+          return batch.commit()
+        },
+        () => {
+          const batch = writeBatch(db)
+          batch.set(areaRef, { name: a.name, color: a.color, order: prevOrder })
+          affected.forEach(t => batch.update(doc(db, 'users', curUid, 'tasks', t.id), { area: a.id, updatedAt: serverTimestamp() }))
+          return batch.commit()
+        },
+        d => ({
+          ...d,
+          projects: d.projects.map(p => (p.area === a.id ? { ...p, area: null } : p)),
+        }),
+      )
+      return
+    }
     undoable(`Area "${a.name}" dihapus`, d => ({
       ...d,
       areas: d.areas.filter(x => x.id !== a.id),
       tasks: d.tasks.map(t => (t.area === a.id ? { ...t, area: null } : t)),
       projects: d.projects.map(p => (p.area === a.id ? { ...p, area: null } : p)),
     }))
-  }, [undoable])
+  }, [undoable, undoableCloud])
 
   const createProject = useCallback((name: string, area: string | null, due: ISODate) => {
     const a = dataRef.current.areas.find(x => x.id === area)
     const p: Project = { id: 'p' + Date.now(), name, area, color: a?.color ?? 'var(--accent)', start: today(), due, members: ['me'], sections: [], archived: false }
-    setData(d => ({ ...d, projects: [...d.projects, p] }))
+    setLocalData(d => ({ ...d, projects: [...d.projects, p] }))
     setUI({ view: 'project', projectId: p.id, mode: 'list', taskId: null })
     say(`Proyek "${name}" dibuat`)
   }, [say, setUI])
@@ -537,12 +913,12 @@ function useStoreValue() {
   /* ----- Akun ----- */
   const startDemo = useCallback(() => {
     // Leaving a real account for the demo loads fresh sample data without touching Firebase.
-    if (!account.demo) setData(seed())
+    if (!account.demo) setLocalData(seed())
     setNeedsAreas(false)
     setAuthError('')
     setAuthBusy(false)
     setAuthStatus('')
-    setAccountState(a => ({ ...a, loggedIn: true, demo: true, name: 'Anda', onboarding: false }))
+    setAccountState(a => ({ ...a, uid: undefined, loggedIn: true, demo: true, name: 'Anda', onboarding: false }))
     setUIState(UI0())
   }, [account.demo])
 
@@ -592,7 +968,9 @@ function useStoreValue() {
 
     try {
       const batch = writeBatch(db)
+      const orders = new Map<string, number>()
       areas.forEach((a, order) => {
+        orders.set(a.id, order)
         batch.set(doc(db, 'users', curUid, 'areas', a.id), {
           name: a.name,
           color: a.color,
@@ -600,31 +978,16 @@ function useStoreValue() {
         })
       })
       guides.forEach(t => {
-        batch.set(doc(db, 'users', curUid, 'tasks', t.id), {
-          title: t.title,
-          project: null,
-          area: t.area,
-          section: t.section,
-          assignee: t.assignee,
-          status: t.status,
-          prio: t.prio,
-          start: t.start,
-          due: t.due,
-          time: t.time,
-          dur: t.dur,
-          rec: t.rec,
-          notes: t.notes,
-          guide: true,
-          createdBy: curUid,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        })
+        batch.set(doc(db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, false))
       })
       batch.update(doc(db, 'users', curUid), { onboarding: true, checkedAreas: false })
       await batch.commit()
 
-      setData({ tasks: guides, projects: [], areas, activity: [] })
-      setAccountState(a => ({ ...a, loggedIn: true, demo: false, onboarding: true, checkedAreas: false }))
+      cloudAreaOrdersRef.current = orders
+      setCloudAreas(areas)
+      setCloudTasks(guides)
+      setLocalData(EMPTY_DATA)
+      setAccountState(a => ({ ...a, uid: curUid, loggedIn: true, demo: false, onboarding: true, checkedAreas: false }))
       setNeedsAreas(false)
       setAuthBusy(false)
       setAuthStatus('')
@@ -644,6 +1007,9 @@ function useStoreValue() {
       return
     }
     handledUid.current = null
+    setCloudAreas([])
+    setCloudTasks([])
+    cloudAreaOrdersRef.current = new Map()
     setNeedsAreas(false)
     setAuthBusy(false)
     setAuthStatus('')
@@ -658,13 +1024,18 @@ function useStoreValue() {
   }, [])
 
   const buyPro = useCallback(() => {
+    if (cloudUidRef.current) {
+      setUIState(u => ({ ...u, pro: null }))
+      say('Pembayaran Pro belum aktif di tahap ini.')
+      return
+    }
     setAccountState(a => ({ ...a, plan: 'pro', demo: false }))
     setUIState(u => ({ ...u, pro: null }))
     say('Pro aktif. Ini simulasi, tidak ada transaksi.')
   }, [say])
 
   const resetDemo = useCallback(() => {
-    setData(seed())
+    setLocalData(seed())
     setUIState(UI0())
     say('Data demo dikembalikan')
   }, [say])
