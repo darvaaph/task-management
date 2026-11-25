@@ -3,6 +3,7 @@ import { QuickSheet } from './components/Composer'
 import { ManageAreas, ManageProject } from './components/Manage'
 import { ShareProject } from './components/Share'
 import { Search, SearchButton } from './components/Search'
+import { ReminderRunner, useNotifyPermission } from './components/Reminders'
 import { AccentPicker, ProBadge, ProScreen } from './components/Pro'
 import { AuthView } from './views/AuthView'
 import { IconCalendar, IconFolder, IconInbox, IconToday, LogoMark } from './components/icons'
@@ -97,6 +98,7 @@ export default function App() {
         {profile && <ProfileSheet onClose={() => setProfile(false)} />}
         {overlays}
         <Toast mobile />
+        <ReminderRunner />
       </div>
     )
   }
@@ -111,6 +113,7 @@ export default function App() {
       {sel && <DetailPanel key={sel.id} task={sel} floating={!wide} />}
       {overlays}
       <Toast />
+      <ReminderRunner />
     </div>
   )
 }
@@ -224,6 +227,7 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
   const s = useStore()
   const owned = s.projects.filter(p => !p.archived).length
   const vibrate = useTouch() && canVibrate
+  const notify = useNotifyPermission()
   const row = 'flex items-center gap-5 border-b border-line'
   return (
     <Sheet onClose={onClose} label="Profil">
@@ -242,6 +246,12 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
         <div className={`${row} py-4 pr-4 pl-7`}>
           <span className="flex-1 text-fg2">Suara saat selesai</span>
           <Segmented value={onoff(s.account.sound)} onChange={v => s.setAccount({ sound: v === 'on' })} options={ONOFF} />
+        </div>
+        <div className={`${row} py-4 pr-4 pl-7`}>
+          <span className="flex-1 text-fg2">Notifikasi pengingat</span>
+          {notify.perm === 'default'
+            ? <button type="button" onClick={() => void notify.request()} className="h-17 rounded-[8px] border border-line2 bg-transparent px-6 text-[13px] font-medium text-fg">Izinkan</button>
+            : <span className="py-4 pr-3 text-[13px] text-fg3">{{ granted: 'Aktif', denied: 'Diblokir', unsupported: 'Tidak didukung' }[notify.perm]}</span>}
         </div>
         {vibrate && (
           <div className={`${row} py-4 pr-4 pl-7`}>

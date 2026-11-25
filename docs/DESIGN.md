@@ -324,6 +324,8 @@ Satu layar masuk dengan empat keadaan: **Masuk**, **Daftar**, **Lupa kata sandi*
 
 - **Mulai** (opsional) untuk tugas beberapa hari. Tenggat otomatis maju jika lebih awal dari mulai. Ditampilkan sebagai "4 hari".
 - **Pengingat** berupa chip. Tugas berjam: 10 mnt, 30 mnt, 1 jam sebelum, H-1 09:00. Tugas tanpa jam: Hari H, H-1, H-3 pukul 09:00. Bawaan: 30 mnt sebelum (berjam) atau Hari H (tanpa jam). Gratis memilih satu (memilih chip lain menggantinya); Pro bisa beberapa. Tanpa tanggal: "Atur tanggal dulu".
+- **Notifikasi:** pengingat muncul sebagai notifikasi sistem (judul = judul tugas, isi = "Hari ini, 14:00 · Nama proyek"). Mengetuknya membuka detail tugas itu. Selama izin belum diberikan, di bawah chip pengingat ada kotak `--surface2`: "Izinkan notifikasi supaya pengingat muncul di perangkat ini." + tombol **Izinkan**; bila diblokir: "Notifikasi diblokir. Izinkan lewat pengaturan situs di browser."; bila tidak didukung: "Browser ini belum mendukung notifikasi. Di iPhone, pasang TaskFlow ke layar utama dulu." Profil HP punya baris "Notifikasi pengingat" (Izinkan / Aktif / Diblokir / Tidak didukung). Izin hanya diminta lewat tombol, tidak pernah otomatis.
+- Tanpa backend, pengingat hanya berbunyi selama TaskFlow terbuka (termasuk tab di latar). Pengingat yang terlewat lebih dari 15 menit dilewati, tidak dikirim terlambat. Tiap pengingat hanya dikirim sekali.
 - **PIC saat menambah tugas:** kalau tujuan adalah proyek bersama, baris "PIC" berisi avatar anggota muncul di composer. Bawaan: Anda.
 
 ### 6.23 Geser dan lepas (mouse)
@@ -371,6 +373,7 @@ Akun baru dari Daftar mulai **kosong** (area yang dipilih di 6.29 tetap ada). Ha
 - **Ukuran layar:** HP < 768 px (navigasi bawah). Tablet 768–1099 px: sidebar tetap, **panel detail melayang** di kanan di atas isi (latar gelap tipis, ketuk di luar untuk menutup). Laptop ≥ 1100 px: panel detail menjadi kolom 360 px seperti biasa.
 - **Jenis input** ditentukan dari `pointer: coarse`, bukan dari lebar layar. Perangkat sentuh: isian teks minimal 16 px (mencegah zoom otomatis di iOS Safari), dan geser-batang Timeline memakai mode "Ubah jadwal". Jangan memakai `maximum-scale=1`, karena mematikan zoom aksesibilitas.
 - **Safe-area:** navigasi bawah, FAB, dan toast memakai `env(safe-area-inset-bottom)`. Tinggi layar memakai `dvh`, bukan `vh`.
+- **PWA:** bisa dipasang ke layar utama (`manifest.webmanifest`, tampilan `standalone`, warna latar/tema `--bg` terang). Service worker (`public/sw.js`, hanya di build produksi) menyimpan aplikasi sejak kunjungan pertama, jadi TaskFlow tetap terbuka tanpa internet; halaman diambil dari jaringan dulu supaya versi baru langsung tampil.
 - **Pintasan:** label ditulis ⌘K di Mac, iPhone, dan iPad; Ctrl+K di Windows, Linux, dan Android. Keduanya tetap berfungsi di semua platform.
 
 ### 6.29 Pilih area awal

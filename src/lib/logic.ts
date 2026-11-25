@@ -92,3 +92,30 @@ export const hoursOf = (hhmm: string) => {
   const [h, m] = hhmm.split(':').map(Number)
   return h + (m || 0) / 60
 }
+
+/** Reminder keys of a task; without a choice it gets the default (30 min before, or 09:00 on the day). */
+export const remindersOf = (t: Task) => t.rems ?? (t.due == null ? [] : [t.time ? 'm30' : 'd0'])
+
+const REM_MIN: Record<string, number> = { m10: 10, m30: 30, h1: 60 }
+const REM_DAYS: Record<string, number> = { d0: 0, d1: 1, d3: 3 }
+
+/** When each reminder of an open task rings, in epoch ms. Day reminders ring at 09:00 local time. */
+export function reminderTimes(t: Task): { key: string; at: number }[] {
+  const due = t.due
+  if (!due || t.status === 'done') return []
+  return remindersOf(t).flatMap(key => {
+    if (key in REM_MIN) {
+      if (!t.time) return []
+      const [h, m] = t.time.split(':').map(Number)
+      const d = parse(due)
+      d.setHours(h, m - REM_MIN[key], 0, 0)
+      return [{ key, at: d.getTime() }]
+    }
+    if (key in REM_DAYS) {
+      const d = parse(addDays(due, -REM_DAYS[key]))
+      d.setHours(9, 0, 0, 0)
+      return [{ key, at: d.getTime() }]
+    }
+    return []
+  })
+}

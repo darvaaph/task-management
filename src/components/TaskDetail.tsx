@@ -1,9 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { PEOPLE, PRIO, STATUS, STATUS_KEYS } from '../lib/constants'
 import { addDays, diffDays, fmtDay, nextMonday, today } from '../lib/dates'
-import { destOfTask } from '../lib/logic'
+import { destOfTask, remindersOf } from '../lib/logic'
 import type { Recurrence, Task } from '../lib/types'
 import { ProBadge } from './Pro'
+import { NotifyHint } from './Reminders'
 import { useStore } from '../store'
 import { DestButton, DestList } from './DestPicker'
 import { Avatar, Chip, PrioPicker, Sheet, useEscape } from './ui'
@@ -105,7 +106,6 @@ const DURS: [number | null, string][] = [[null, 'Tanpa'], [15, '15 mnt'], [30, '
 const RECS: [Recurrence | null, string, boolean][] = [[null, 'Tidak', false], ['daily', 'Harian', false], ['weekly', 'Mingguan', false], ['weekdays', 'Hari kerja', true], ['monthly', 'Bulanan', true]]
 const REM_TIMED: [string, string][] = [['m10', '10 mnt sebelum'], ['m30', '30 mnt sebelum'], ['h1', '1 jam sebelum'], ['d1', 'H-1, 09:00']]
 const REM_DAY: [string, string][] = [['d0', 'Hari H, 09:00'], ['d1', 'H-1, 09:00'], ['d3', 'H-3, 09:00']]
-export const remindersOf = (t: Task) => t.rems ?? (t.due == null ? [] : [t.time ? 'm30' : 'd0'])
 
 /** A chip that, when locked, shows PRO and opens the Pro screen instead. */
 function LockChip({ active, locked, onClick, children, big }: { active: boolean; locked?: boolean; onClick: () => void; children: ReactNode; big?: boolean }) {
@@ -154,6 +154,7 @@ function Reminders({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean 
       <p className="m-0 text-[12px] leading-normal text-fg3">
         {d.s.isPro ? 'Bisa pilih lebih dari satu.' : <>Gratis: 1 pengingat per tugas. Lebih dari satu di <button type="button" onClick={() => d.s.openPro('rem')} aria-label="Lihat TaskFlow Pro" className="inline-flex border-0 bg-transparent p-0 align-middle"><ProBadge /></button></>}
       </p>
+      {cur.length > 0 && <NotifyHint />}
     </div>
   )
 }

@@ -28,6 +28,8 @@ export interface Account {
   sound?: boolean
   /** Short vibration on completion and swipe threshold (Android only on the web). Off by default. */
   haptics?: boolean
+  /** Reminders already shown, as "task:due:key", so a reload never shows one twice. */
+  notified?: string[]
 }
 
 const ACCOUNT0: Account = { loggedIn: false, demo: false, name: 'Anda', plan: 'free', accent: 'indigo', onboarding: false, checkedAreas: false }
@@ -370,11 +372,13 @@ function useStoreValue() {
     say('Data demo dikembalikan')
   }, [say])
 
+  const markNotified = useCallback((ids: string[]) => setAccountState(a => ({ ...a, notified: [...ids, ...(a.notified ?? [])].slice(0, 300) })), [])
+
   const go = useCallback((view: View, extra: Partial<UI> = {}) => setUI({ view, taskId: null, overlay: null, ...extra }), [setUI])
 
   return {
     ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro, startDemo, signIn, register, signOut, buyPro, go, toast, setToast, say,
-    updateTask, toggleTask, setStatus, deleteTask, clearGuides, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
+    updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
     renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,
     updateArea, addArea, deleteArea,
     todayTasks: data.tasks.filter(t => inToday(t)),

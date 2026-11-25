@@ -11,3 +11,8 @@ createRoot(document.getElementById('root')!).render(
     </StoreProvider>
   </StrictMode>,
 )
+
+// Offline support. Only in production builds: in dev it would cache modules and fight hot reload.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js') })
+}
