@@ -4,4 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  server: {
+    // Allow Cloudflare Quick Tunnel URLs during local dev preview
+    allowedHosts: ['.trycloudflare.com'],
+  },
 })
