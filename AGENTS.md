@@ -18,7 +18,7 @@ Kalau ada yang tidak tertulis di sini maupun di dokumen di atas, **tanya dulu**.
 
 | | Versi | Catatan |
 |---|---|---|
-| Vite | 6.3.5 | `vite.config.ts` |
+| Vite | 6.4.6 | `vite.config.ts` |
 | React | 19.1 | function components + hooks saja |
 | TypeScript | 5.8, `strict`, `noUnusedLocals` | `tsconfig.json` |
 | Tailwind CSS | 4.1 lewat `@tailwindcss/vite` | **tanpa** `tailwind.config.js`; tema ada di CSS |
@@ -151,3 +151,5 @@ Jangan pakai nilai Tailwind "biasa" (`p-4` ≠ 16px di sini). Ukuran yang tidak 
 ## Status dan langkah berikutnya
 
 Lihat `docs/PROGRESS.md`. Perbarui file itu setiap selesai satu bagian pekerjaan.
+
+Pekerjaan backend yang sedang berjalan: `docs/HANDOFF-FASE1.md` (tugas, batasan, definisi selesai) dan `docs/BACKEND.md` (rancangan). Agent Gemini membaca `GEMINI.md`, yang menunjuk ke file ini.
