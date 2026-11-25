@@ -64,7 +64,7 @@ Setelah login pertama, bila browser punya data lokal non-demo, tawarkan "Pindahk
 - **Selesai bila:** data lokal contoh berpindah satu kali dan tidak terduplikasi bila tombol ditekan dua kali.
 
 ## 5. File lingkungan
-- `.env.local` (tidak ikut git): `VITE_FIREBASE_*` dari konfigurasi proyek sungguhan dan `VITE_USE_EMULATORS=true`.
+- `.env.local` (tidak ikut git): `VITE_FIREBASE_*` dari konfigurasi proyek sungguhan dan `VITE_USE_EMULATORS=true`. Sebelum build untuk deploy ke produksi, ubah `VITE_USE_EMULATORS` di `.env.local` menjadi `false` (bagian dari Fase 3).
 - `.env.example` (ikut git): kerangka yang sama tanpa nilai.
 
 ## 6. Kapan harus berhenti dan bertanya

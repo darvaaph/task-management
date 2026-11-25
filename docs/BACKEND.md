@@ -238,6 +238,8 @@ Catatan yang harus diputuskan saat menulis rules final:
 
 Rahasia (kunci Xendit, akun layanan Google Play) disimpan di Secret Manager lewat `defineSecret`, tidak pernah di kode klien.
 
+Catatan runtime: seluruh Cloud Functions dijalankan di region `asia-southeast2` (Jakarta) mengikuti Firestore. Dukungan runtime Node 24 di Cloud Functions harus diperiksa sebelum deploy pertama (belum diverifikasi).
+
 ## 6. Perkiraan biaya awal
 
 Pengguna aktif biasa per hari: ±100–300 baca (listener awal + perubahan) dan ±20–50 tulis. Kuota gratis harian Firestore (cek angka terbaru di halaman harga Firebase) cukup untuk ratusan pengguna aktif per hari. Function berjalan per undangan, pembayaran, dan perubahan tugas proyek. Pasang **peringatan anggaran** di Google Cloud sejak hari pertama.

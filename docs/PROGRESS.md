@@ -1,6 +1,6 @@
 # Progres TaskFlow
 
-Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bagian pekerjaan.
+Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bagian pekerjaan.
 
 ## Sudah dibangun (desktop + HP, terang + gelap)
 
@@ -33,8 +33,9 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Backend Fase 1A — Fondasi Firebase & Emulator: konfigurasi emulator (Auth 9099, Firestore 8080, Functions 5001, UI 4000), `.firebaserc` (`demo-taskflow` default, `prod` alias), `firestore.rules` awal (tolak semua), `firestore.indexes.json`, klien `src/lib/firebase.ts` (`persistentLocalCache` + `persistentMultipleTabManager`, tanpa Analytics), skrip `emulators` & `test:rules` | `firebase.json`, `.firebaserc`, `firestore.rules`, `firestore.indexes.json`, `src/lib/firebase.ts`, `package.json` | HANDOFF-FASE1 §4 (1A); belum disambungkan ke UI/store |
 | Backend Fase 1B — Security Rules & tesnya: aturan Firestore untuk `users/{uid}` (isolasi pemilik, field server-only, `accent` Gratis vs Pro), `areas`, `tasks` (judul wajib 1–300 karakter, `dur`/`rec`/`rems` Gratis vs Pro, field audit immutable), `reminders`, penolakan penuh `projects`/`invites`/`purchases`, dan 21 tes unit `node --test` lewat emulator | `firestore.rules`, `tests/rules/firestore.test.mjs`, `package.json` | HANDOFF-FASE1 §4 (1B); `@firebase/rules-unit-testing` sebagai devDependency; belum disambungkan ke UI/store |
 | Backend Fase 1C — Login Google web & `onUserCreated`: Cloud Function `onUserCreated` membuat `users/{uid}` (`plan: 'free'`, `activeOwned: 0`), layar Masuk baru ("Lanjutkan dengan Google" + "Coba Mode Demo"), Pilih area awal menulis `users/{uid}/areas` dan `guideTasks()` ke `users/{uid}/tasks`, Keluar (`signOut`), Mode Demo tetap lokal | `functions/index.js`, `functions/package.json`, `firebase.json`, `src/store.tsx`, `src/views/AuthView.tsx`, `src/components/icons.tsx`, `docs/DESIGN.md` | HANDOFF-FASE1 §4 (1C); mutasi tugas/area berkelanjutan menyusul di 1D |
-| Backend Fase 1D — `store.tsx` tersambung ke Firestore untuk area & tugas lepas: listener realtime `onSnapshot` (`users/{uid}`, `areas`, `tasks`), `plan` hanya-baca dari `users/{uid}` sebagai dasar `isPro`, seluruh mutasi area & tugas lepas menulis ke Firestore (termasuk `moveTask` lintas lepas↔proyek dan Urungkan 6 detik online/offline), proyek/aktivitas/setelan tetap lokal, Mode Demo tetap lokal | `src/store.tsx` | HANDOFF-FASE1 §4 (1D); cache offline `persistentLocalCache` teruji |
+| Backend Fase 1D — `store.tsx` tersambung ke Firestore untuk area & tugas lepas: listener realtime `onSnapshot` (`users/{uid}`, `areas`, `tasks`), `plan` hanya-baca dari `users/{uid}` sebagai dasar `isPro`, seluruh mutasi area & tugas lepas menulis ke Firestore (termasuk `moveTask` lintas lepas↔proyek dan Urungkan 6 detik online/offline), proyek/aktivitas/setelan tetap lokal, Mode Demo tetap lokal | `src/store.tsx` | HANDOFF-FASE1 §4 (1D); memakai cache offline `persistentLocalCache` |
 | Backend Fase 1E — Pindahkan data lokal ke akun: deteksi data lokal non-demo sebelum login pertama, dialog `Modal`/`Sheet` "Pindahkan data di perangkat ini ke akun Anda?" (Pindahkan / Lewati), tulis batch maks. 500 per batch untuk area & tugas lepas saja, idempoten dan tahan klik ganda | `src/store.tsx`, `src/App.tsx`, `docs/DESIGN.md` | HANDOFF-FASE1 §4 (1E) |
+| Perbaikan Fase 1 (P1–P4): penyimpanan lokal proyek per `uid` (`byUid`) + tawaran migrasi bagi pengguna lama (P1), antrean tulis debounce 600 ms + flush `onBlur`/tutup/keluar/`visibilitychange` untuk teks judul/catatan/nama area (P2), lazy-load Firebase SDK lewat `import()` (chunk utama 1.160,84 kB → 360,41 kB; 0 unduhan Firebase di Masuk & Mode Demo) (P3), serta region `asia-southeast2` pada `onUserCreated` & perapian gaya/catatan (P4) | `src/store.tsx`, `src/lib/firebase.ts`, `src/components/TaskDetail.tsx`, `src/components/Manage.tsx`, `functions/index.js`, `docs/BACKEND.md`, `docs/HANDOFF-FASE1.md` | HANDOFF-FASE1-PERBAIKAN (P1–P4); menunggu tinjauan ulang sebelum Fase 2 |
 
 ## Belum dibangun
 
@@ -45,13 +46,14 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
-- **Fase 1 belum final:** hasil tinjauan (data lokal terhapus saat keluar-masuk, tulis per ketikan, ukuran bundel) sedang diperbaiki; lihat `docs/HANDOFF-FASE1-PERBAIKAN.md`.
+- **Fase 1 menunggu tinjauan ulang:** perbaikan P1–P4 dari `docs/HANDOFF-FASE1-PERBAIKAN.md` sudah selesai di branch `feat/backend-fase-1` dan menunggu tinjauan ulang sebelum Fase 2 dimulai.
 - Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`, dipisah per `uid` akun sehingga aman saat keluar-masuk atau ganti akun, tetapi **terikat ke satu perangkat sampai Fase 2**); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
 - Tes otomatis baru mencakup Security Rules (`npm run test:rules`); belum ada tes UI atau linter. Pemeriksaan = `npm run build` + `npm run test:rules` + cek manual di browser.
 
 ## Riwayat
 
+- **26 Nov 2026** — Perbaikan Fase 1 (P1–P4): isolasi data lokal proyek per `uid` + tawaran migrasi bagi pengguna lama (P1), debounce 600 ms + flush tulis teks ke Firestore (P2), lazy-load Firebase SDK via `import()` sehingga chunk utama turun ke ~360 kB (P3), serta region `asia-southeast2` pada `onUserCreated` dan perapian gaya/dokumentasi (P4).
 - **25 Nov 2026** — Backend Fase 1E: tawaran pindahkan data lokal non-demo (area & tugas lepas) setelah login pertama dengan batch ≤500 tulis dan pengaman anti-duplikasi.
 - **25 Nov 2026** — Backend Fase 1D: `store.tsx` tersambung ke Firestore (`onSnapshot` + mutasi + Urungkan + offline) untuk area, tugas lepas, dan `plan` hanya-baca; proyek & Mode Demo tetap lokal.
 - **25 Nov 2026** — Backend Fase 1C: Cloud Function `onUserCreated`, login Google web (`signInWithPopup` + cadangan `signInWithRedirect`), layar Masuk baru (§6.20), Pilih area awal menulis area & tugas panduan ke Firestore, dan Keluar (`signOut`).

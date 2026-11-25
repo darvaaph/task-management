@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase-admin/app'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
-import { user as authUser } from 'firebase-functions/v1/auth'
+import { region } from 'firebase-functions/v1'
 
 initializeApp()
 const db = getFirestore()
@@ -9,7 +9,7 @@ const db = getFirestore()
  * Create the server-managed profile document on first sign-up so clients cannot
  * forge plan/quota fields (docs/BACKEND.md §2.1, §3.1).
  */
-export const onUserCreated = authUser().onCreate(async (user) => {
+export const onUserCreated = region('asia-southeast2').auth.user().onCreate(async (user) => {
   const fallbackName = user.email ? user.email.split('@')[0] : 'Anda'
   const name = (user.displayName?.trim() || fallbackName).slice(0, 100)
   const ref = db.doc(`users/${user.uid}`)
