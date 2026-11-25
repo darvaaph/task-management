@@ -45,7 +45,8 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
-- Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
+- **Fase 1 belum final:** hasil tinjauan (data lokal terhapus saat keluar-masuk, tulis per ketikan, ukuran bundel) sedang diperbaiki; lihat `docs/HANDOFF-FASE1-PERBAIKAN.md`.
+- Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`, dipisah per `uid` akun sehingga aman saat keluar-masuk atau ganti akun, tetapi **terikat ke satu perangkat sampai Fase 2**); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
 - Tes otomatis baru mencakup Security Rules (`npm run test:rules`); belum ada tes UI atau linter. Pemeriksaan = `npm run build` + `npm run test:rules` + cek manual di browser.
 
