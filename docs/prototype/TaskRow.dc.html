@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div onClick="{{ t.onOpen }}" style="display:flex;align-items:center;gap:8px;padding:5px 10px 5px 2px;min-height:50px;width:100%;min-width:0;overflow:hidden;box-sizing:border-box;border-radius:10px;background:{{ t.rowBg }};cursor:pointer;transition:background .15s;font-family:var(--sans)" style-hover="background:var(--hover)">
+  <button onClick="{{ t.onToggle }}" aria-label="Tandai selesai" style="flex:none;width:38px;height:38px;display:grid;place-items:center;background:none;border:0;padding:0;cursor:pointer">
+    <span style="width:20px;height:20px;box-sizing:border-box;border-radius:50%;border:1.6px solid {{ t.checkBorder }};background:{{ t.checkBg }};color:var(--bg);font-size:11px;font-weight:700;display:grid;place-items:center;line-height:1;transition:all .15s">{{ t.check }}</span>
+  </button>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+    <div style="font-size:14px;line-height:1.3;color:{{ t.titleColor }};text-decoration:{{ t.deco }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.title }}</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg3);min-width:0">
+      <span style="width:7px;height:7px;border-radius:2px;flex:none;background:{{ t.metaColor }}"></span>
+      <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.meta }}</span>
+      <sc-if value="{{ t.hasTime }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono);font-size:11px;flex:none">{{ t.time }}</span></sc-if>
+    </div>
+  </div>
+  <sc-if value="{{ t.showMove }}" hint-placeholder-val="{{ false }}"><button onClick="{{ t.onMove }}" style="flex:none;font:600 11.5px var(--sans);color:var(--high);background:var(--high-soft);border:0;border-radius:7px;padding:6px 8px;cursor:pointer;white-space:nowrap">{{ t.moveLabel }}</button></sc-if>
+  <sc-if value="{{ t.hasDate }}" hint-placeholder-val="{{ false }}"><span style="flex:none;font-size:12px;color:{{ t.dateColor }};white-space:nowrap">{{ t.dateLabel }}</span></sc-if>
+  <sc-if value="{{ t.hasAssignee }}" hint-placeholder-val="{{ false }}"><span title="{{ t.avName }}" style="flex:none;width:22px;height:22px;border-radius:50%;background:{{ t.avBg }};color:#fff;font:600 10.5px var(--sans);display:grid;place-items:center">{{ t.av }}</span></sc-if>
+  <span style="flex:none;font:600 10.5px var(--mono);letter-spacing:.02em;padding:3px 7px;border-radius:6px;background:{{ t.prioBg }};color:{{ t.prioColor }}">{{ t.prioLabel }}</span>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;t&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;}}"></script>
+</body>
+</html>

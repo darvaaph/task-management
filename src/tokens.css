@@ -1,0 +1,132 @@
+/* TaskFlow design tokens v0.3 — diturunkan dari tokens.json
+   Pakai: <html data-theme="light|dark" data-accent="indigo|teal|tangerine|forest">
+   Tanpa data-theme, mengikuti setelan OS (prefers-color-scheme). */
+
+:root {
+  /* Font */
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-sans: 'Onest', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Skala teks: ukuran / tinggi baris / berat */
+  --text-title-xl: 600 34px/1.05 var(--font-display);
+  --text-title-l: 600 30px/1.05 var(--font-display);
+  --text-title-m: 600 20px/1.25 var(--font-display);
+  --text-body: 400 14px/1.3 var(--font-sans);
+  --text-body-s: 500 13px/1.45 var(--font-sans);
+  --text-meta: 400 12px/1.35 var(--font-sans);
+  --text-label: 600 11px/1.2 var(--font-mono);   /* + letter-spacing: var(--tracking-label); uppercase */
+  --text-badge: 600 10.5px/1.2 var(--font-mono);
+  --tracking-title: -0.02em;
+  --tracking-label: 0.08em;
+
+  /* Spasi */
+  --space-1: 2px;  --space-2: 4px;  --space-3: 6px;  --space-4: 8px;
+  --space-5: 10px; --space-6: 12px; --space-7: 14px; --space-8: 16px;
+  --space-10: 20px; --space-12: 24px; --space-14: 28px; --space-16: 32px; --space-22: 44px;
+
+  /* Radius */
+  --radius-xs: 5px; --radius-sm: 7px; --radius-md: 10px; --radius-lg: 14px;
+  --radius-xl: 16px; --radius-fab: 20px; --radius-sheet: 22px; --radius-pill: 99px;
+
+  /* Ukuran */
+  --size-touch-min: 36px; --size-button-mobile: 48px; --size-task-row: 50px; --size-checkbox: 20px;
+  --size-nav-bottom: 88px; --size-fab: 58px; --size-sidebar: 236px; --size-detail-panel: 360px;
+  --size-content-narrow: 780px; --size-content-wide: 900px;
+  --size-week-hour: 48px; --size-week-gutter: 56px;
+
+  /* Gerak */
+  --dur-fast: 150ms; --dur-base: 200ms; --dur-sheet: 280ms; --dur-bar: 300ms;
+  --ease-standard: cubic-bezier(.25, .1, .25, 1);
+  --ease-sheet: cubic-bezier(.2, .8, .2, 1);
+
+  /* Lapisan */
+  --z-row: 1; --z-sticky: 3; --z-nav: 4; --z-overlay: 8; --z-sheet: 9; --z-toast: 50;
+
+  /* Bayangan */
+  --shadow-seg-active: 0 1px 2px rgba(0, 0, 0, .1);
+  --shadow-fab: 0 10px 24px -8px oklch(0.4 0.15 var(--accent-h) / .55);
+
+  /* Aksen: lightness & hue per tema (default Indigo) */
+  --accent-h: 265; --accent-l: 0.5; --accent-l-dark: 0.72;
+}
+
+[data-accent="teal"]      { --accent-h: 195; --accent-l: 0.47; }
+[data-accent="tangerine"] { --accent-h: 45; }
+[data-accent="forest"]    { --accent-h: 150; }
+
+/* ---------- Terang ---------- */
+:root, [data-theme="light"] {
+  --canvas: #e4e2dc;
+  --bg: #f6f5f1;
+  --surface: #fdfcfa;
+  --surface2: #eeece6;
+  --hover: rgba(28, 27, 24, .045);
+  --line: rgba(28, 27, 24, .08);
+  --line2: rgba(28, 27, 24, .16);
+  --fg: #1c1b18;
+  --fg2: #58554e;
+  --fg3: #6b675f;
+
+  --accent: oklch(var(--accent-l) 0.16 var(--accent-h));
+  --accent-soft: oklch(var(--accent-l) 0.16 var(--accent-h) / .11);
+  --on-accent: #fff;
+
+  --high: oklch(0.53 0.19 27);  --high-soft: oklch(0.53 0.19 27 / .11);
+  --med: oklch(0.5 0.12 65);    --med-soft: oklch(0.7 0.14 75 / .18);
+  --low: oklch(0.5 0.08 230);   --low-soft: oklch(0.5 0.08 230 / .12);
+
+  --area-kuliah: oklch(0.58 0.13 250);
+  --area-kantor: oklch(0.57 0.14 310);
+  --area-pribadi: oklch(0.6 0.12 155);
+
+  color-scheme: light;
+}
+
+/* ---------- Gelap ---------- */
+[data-theme="dark"] {
+  --canvas: #0d0d0c;
+  --bg: #161614;
+  --surface: #1e1d1b;
+  --surface2: #282724;
+  --hover: rgba(255, 250, 240, .045);
+  --line: rgba(255, 250, 240, .08);
+  --line2: rgba(255, 250, 240, .15);
+  --fg: #efede7;
+  --fg2: #aaa69d;
+  --fg3: #9a968d;
+
+  --accent: oklch(var(--accent-l-dark) 0.13 var(--accent-h));
+  --accent-soft: oklch(var(--accent-l-dark) 0.13 var(--accent-h) / .14);
+  --on-accent: #111;
+
+  --high: oklch(0.7 0.16 27);   --high-soft: oklch(0.7 0.16 27 / .14);
+  --med: oklch(0.78 0.13 75);   --med-soft: oklch(0.78 0.13 75 / .13);
+  --low: oklch(0.72 0.07 230);  --low-soft: oklch(0.72 0.07 230 / .13);
+
+  --area-kuliah: oklch(0.7 0.12 250);
+  --area-kantor: oklch(0.7 0.12 310);
+  --area-pribadi: oklch(0.72 0.11 155);
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --canvas: #0d0d0c; --bg: #161614; --surface: #1e1d1b; --surface2: #282724;
+    --hover: rgba(255, 250, 240, .045); --line: rgba(255, 250, 240, .08); --line2: rgba(255, 250, 240, .15);
+    --fg: #efede7; --fg2: #aaa69d; --fg3: #9a968d;
+    --accent: oklch(var(--accent-l-dark) 0.13 var(--accent-h));
+    --accent-soft: oklch(var(--accent-l-dark) 0.13 var(--accent-h) / .14);
+    --on-accent: #111;
+    --high: oklch(0.7 0.16 27); --high-soft: oklch(0.7 0.16 27 / .14);
+    --med: oklch(0.78 0.13 75); --med-soft: oklch(0.78 0.13 75 / .13);
+    --low: oklch(0.72 0.07 230); --low-soft: oklch(0.72 0.07 230 / .13);
+    --area-kuliah: oklch(0.7 0.12 250); --area-kantor: oklch(0.7 0.12 310); --area-pribadi: oklch(0.72 0.11 155);
+    color-scheme: dark;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur-base: 0ms; --dur-sheet: 0ms; --dur-bar: 0ms; }
+}

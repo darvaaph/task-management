@@ -1,0 +1,68 @@
+/* TaskFlow × Tailwind CSS v4
+   Impor setelah tokens.css:
+     @import "tailwindcss";
+     @import "./tokens.css";
+     @import "./tailwind.css";
+   Hasilnya: bg-surface, text-fg3, border-line2, bg-high-soft, rounded-pill, font-display, dst.
+   Warna memakai variabel dari tokens.css, jadi tema terang/gelap dan aksen otomatis ikut.
+   Font, shadow-fab, dan ease-sheet ditulis langsung (bukan var()) karena namanya sama dengan variabel
+   di tokens.css; var() ke nama yang sama akan membuat referensi melingkar. */
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-fg: var(--fg);
+  --color-fg2: var(--fg2);
+  --color-fg3: var(--fg3);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-on-accent: var(--on-accent);
+  --color-high: var(--high);
+  --color-high-soft: var(--high-soft);
+  --color-med: var(--med);
+  --color-med-soft: var(--med-soft);
+  --color-low: var(--low);
+  --color-low-soft: var(--low-soft);
+  --color-area-kuliah: var(--area-kuliah);
+  --color-area-kantor: var(--area-kantor);
+  --color-area-pribadi: var(--area-pribadi);
+
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-sans: 'Onest', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --radius-xs: 5px;
+  --radius-sm: 7px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-fab: 20px;
+  --radius-sheet: 22px;
+  --radius-pill: 99px;
+
+  --shadow-seg: var(--shadow-seg-active);
+  --shadow-fab: 0 10px 24px -8px oklch(0.4 0.15 var(--accent-h) / .55);
+
+  --ease-sheet: cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Spasi: Tailwind v4 memakai satu unit dasar (--spacing). 2px membuat p-4 = 8px, p-8 = 16px, p-16 = 32px,
+   sama dengan nama token space-* di tokens.json. */
+@theme {
+  --spacing: 2px;
+}
+
+/* Gaya teks siap pakai */
+@utility text-title-xl { font: var(--text-title-xl); letter-spacing: var(--tracking-title); }
+@utility text-title-l  { font: var(--text-title-l);  letter-spacing: var(--tracking-title); }
+@utility text-title-m  { font: var(--text-title-m); }
+@utility text-body     { font: var(--text-body); }
+@utility text-body-s   { font: var(--text-body-s); }
+@utility text-meta     { font: var(--text-meta); }
+@utility text-label    { font: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+@utility text-badge    { font: var(--text-badge); letter-spacing: .02em; }
