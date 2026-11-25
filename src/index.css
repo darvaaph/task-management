@@ -4,6 +4,8 @@
 
 /* In @layer base so Tailwind utilities can override these. */
 @layer base {
+  /* Bottom inset for the phone nav: the home indicator where there is one, 24px otherwise. */
+  :root { --nav-pad: max(24px, env(safe-area-inset-bottom)); }
   html, body, #root { height: 100%; }
   body {
     margin: 0;
@@ -19,10 +21,18 @@
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 }
 
+/* iOS Safari zooms the page into any field under 16px. Unlayered on purpose so it beats the text-* utilities;
+   display-font titles are already larger and keep their size. */
+@media (pointer: coarse) {
+  input:not([type=checkbox], [type=radio], [type=range], [type=color], .font-display), textarea:not(.font-display), select { font-size: 16px; }
+}
+
 @keyframes tf-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes tf-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tf-slide { from { transform: translateX(24px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes tf-pop { 0% { transform: scale(.85); } 60% { transform: scale(1.1); } 100% { transform: scale(1); } }
 @utility animate-up { animation: tf-up var(--dur-sheet) var(--ease-sheet); }
 @utility animate-fade { animation: tf-fade var(--dur-base); }
 @utility animate-slide { animation: tf-slide var(--dur-base) ease-out; }
+@utility animate-pop { animation: tf-pop var(--dur-sheet) var(--ease-sheet); }
 @utility no-scrollbar { scrollbar-width: none; &::-webkit-scrollbar { display: none; } }

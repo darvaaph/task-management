@@ -3,7 +3,7 @@ import { Avatar, Chip, EmptyCard, Modal, ProgressBar, Segmented, Sheet, btnPrima
 import { FREE_PROJECT_QUOTA, PEOPLE } from '../lib/constants'
 import { addDays, fmt, today } from '../lib/dates'
 import { areaOf, daysLeftLabel, projectProgress } from '../lib/logic'
-import type { Project } from '../lib/types'
+import type { ISODate, Project } from '../lib/types'
 import { useStore } from '../store'
 
 export function ProjectsView({ mobile }: { mobile: boolean }) {
@@ -127,17 +127,18 @@ function NewProject({ mobile, onClose }: { mobile: boolean; onClose: () => void 
   const s = useStore()
   const [name, setName] = useState('')
   const [area, setArea] = useState<string>(s.ui.projArea !== 'all' ? s.ui.projArea : s.areas[0]?.id ?? '')
-  const [weeks, setWeeks] = useState(2)
+  const [due, setDue] = useState<ISODate>(() => addDays(today(), 14))
   const owned = s.projects.filter(p => !p.archived).length
   const full = !s.isPro && owned >= FREE_PROJECT_QUOTA
   const ok = !full && name.trim().length > 0
   const submit = () => {
     if (full) { onClose(); s.openPro('proj'); return }
     if (!ok) return
-    s.createProject(name.trim(), area || null, addDays(today(), weeks * 7))
+    s.createProject(name.trim(), area || null, due)
     onClose()
   }
   const lbl = 'text-label text-fg3'
+  const t0 = today()
   const body = (
     <>
       <div className="font-display text-[20px] font-semibold">Proyek baru</div>
@@ -151,7 +152,20 @@ function NewProject({ mobile, onClose }: { mobile: boolean; onClose: () => void 
       </div>
       <div className="flex flex-col gap-4">
         <span className={lbl}>TENGGAT</span>
-        <div className="flex flex-wrap gap-3">{[1, 2, 3].map(w => <Chip key={w} size={mobile ? 'lg' : 'md'} active={weeks === w} onClick={() => setWeeks(w)}>{`${w} minggu · ${fmt(addDays(today(), w * 7))}`}</Chip>)}</div>
+        <div className="flex flex-wrap items-center gap-3">
+          {[1, 2, 3].map(w => {
+            const d = addDays(t0, w * 7)
+            return <Chip key={w} size={mobile ? 'lg' : 'md'} active={due === d} onClick={() => setDue(d)}>{`${w} minggu · ${fmt(d)}`}</Chip>
+          })}
+          <input
+            type="date"
+            value={due}
+            min={t0}
+            onChange={e => e.target.value && setDue(e.target.value)}
+            aria-label="Tanggal tenggat"
+            className={`${mobile ? 'h-18' : 'h-16'} rounded-[8px] border border-line2 bg-bg px-4 text-[13px] font-medium text-fg`}
+          />
+        </div>
       </div>
       <div className={`text-[12.5px] ${full ? 'text-high' : 'text-fg3'}`}>
         {full ? `Kuota ${FREE_PROJECT_QUOTA} proyek aktif penuh. Arsipkan proyek lain, atau buka batasnya dengan Pro.` : s.isPro ? 'Proyek aktif tanpa batas.' : `${owned} dari ${FREE_PROJECT_QUOTA} slot proyek aktif terpakai.`}

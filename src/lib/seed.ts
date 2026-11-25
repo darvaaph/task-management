@@ -1,7 +1,24 @@
 import { addDays, today } from './dates'
-import type { Data, Priority, Recurrence, Status } from './types'
+import type { Data, Priority, Recurrence, Status, Task } from './types'
 
 type Row = [string, string, string | null, string | null, string | null, string | null, Status, Priority, number | null, number | null, string | null, string, Recurrence?, number?]
+
+/** Starter tasks for a new account: undated Inbox items (never overdue) that teach the app by using it. */
+export function guideTasks(): Task[] {
+  const rows: [string, string][] = [
+    ['Centang lingkaran di kiri untuk menyelesaikan tugas', 'Tugas selesai pindah ke bawah. Centang lagi kalau ingin membatalkannya.'],
+    ['Buka tugas ini untuk melihat detailnya', 'Di detail kamu bisa mengatur tanggal, prioritas, pengingat, dan catatan. Coba beri tanggal Besok.'],
+    ['Hapus tugas ini lewat detail tugas', 'Buka tugas, lalu pilih Hapus. Selama 6 detik ada tombol Urungkan kalau berubah pikiran.'],
+  ]
+  // Swiping only exists on touch screens, so only teach it there.
+  if (typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches) {
+    rows.splice(1, 0, ['Usap tugas ini ke kanan atau ke kiri', 'Usap ke kanan untuk menyelesaikan, ke kiri untuk menjadwalkan. Tombol dan detail tugas tetap bisa dipakai.'])
+  }
+  return rows.map(([title, notes], i) => ({
+    id: 'g' + (i + 1), title, project: null, area: null, section: null, assignee: null, status: 'todo', prio: 'med',
+    start: null, due: null, time: null, notes, rec: null, dur: null, guide: true,
+  }))
+}
 
 /** Demo data. Day numbers are offsets from today, so the demo always looks current. */
 export function seed(): Data {
@@ -45,5 +62,11 @@ export function seed(): Data {
       id: a[0], title: a[1], project: a[2], area: a[3], section: a[4], assignee: a[5], status: a[6], prio: a[7],
       start: d(a[8]), due: d(a[9]), time: a[10], notes: a[11], rec: a[12] ?? null, dur: a[13] ?? null,
     })),
+    activity: [
+      { p: 'pitch', text: 'Budi menyelesaikan "Review desain UI"', ts: Date.now() - 3 * 3600e3 },
+      { p: 'uas', text: 'Siti memindah "Tulis bab 3 metodologi" ke Dikerjakan', ts: Date.now() - 2 * 864e5 },
+      { p: 'uas', text: 'Anda menyelesaikan "Susun outline bab 1"', ts: Date.now() - 4 * 864e5 },
+      { p: 'uas', text: 'Siti menyelesaikan "Kumpulkan referensi jurnal"', ts: Date.now() - 5 * 864e5 },
+    ],
   }
 }

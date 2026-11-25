@@ -1,9 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AREA_COLORS, FREE_PROJECT_QUOTA, STATUS } from './lib/constants'
+import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS, FREE_MEMBER_QUOTA, FREE_PROJECT_QUOTA, MEMBER_POOL, PEOPLE, PRO_MEMBER_QUOTA, STATUS } from './lib/constants'
 import { addDays, diffDays, fmtDay, today } from './lib/dates'
 import { inToday, isOverdue, nextActiveOccurrence, parseDest, type Dest } from './lib/logic'
-import { seed } from './lib/seed'
-import type { Area, Data, ISODate, Priority, Project, Task } from './lib/types'
+import { guideTasks, seed } from './lib/seed'
+import { feedback } from './lib/feedback'
+import type { Activity, Area, Data, ISODate, Priority, Project, Task } from './lib/types'
 
 const KEY = 'taskflow-v1'
 
@@ -11,7 +12,7 @@ export type View = 'today' | 'inbox' | 'jadwal' | 'projects' | 'project'
 export type Theme = 'light' | 'dark'
 export type Accent = 'indigo' | 'teal' | 'tangerine' | 'forest'
 /** Which locked feature opened the Pro screen; highlights its row and explains it. */
-export type ProCtx = 'general' | 'tl' | 'rec' | 'dur' | 'proj' | 'accent' | 'rem'
+export type ProCtx = 'general' | 'tl' | 'rec' | 'dur' | 'proj' | 'accent' | 'rem' | 'share'
 
 export interface Account {
   loggedIn: boolean
@@ -23,6 +24,10 @@ export interface Account {
   /** New accounts show a welcome card until skipped. */
   onboarding: boolean
   checkedAreas: boolean
+  /** Soft tick when a task is completed. Off by default. */
+  sound?: boolean
+  /** Short vibration on completion and swipe threshold (Android only on the web). Off by default. */
+  haptics?: boolean
 }
 
 const ACCOUNT0: Account = { loggedIn: false, demo: false, name: 'Anda', plan: 'free', accent: 'indigo', onboarding: false, checkedAreas: false }
@@ -39,7 +44,7 @@ export interface UI {
   cal: 'month' | 'week' | 'timeline'
   /** Selected day, shared by Bulan and Minggu. */
   calDay: ISODate
-  overlay: null | 'search' | 'project' | 'areas'
+  overlay: null | 'search' | 'project' | 'areas' | 'share'
   pro: ProCtx | null
 }
 
@@ -53,13 +58,25 @@ const UI0 = (): UI => ({ view: 'today', projectId: null, mode: 'list', taskId: n
 function load(): { data: Data; theme: Theme; account: Account } {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) || 'null')
-    if (s?.data?.tasks) return { data: s.data, theme: s.theme === 'dark' ? 'dark' : 'light', account: { ...ACCOUNT0, ...s.account } }
+    if (s?.data?.tasks) {
+      return {
+        data: { ...s.data, activity: Array.isArray(s.data.activity) ? s.data.activity : [] },
+        theme: s.theme === 'dark' ? 'dark' : 'light',
+        account: { ...ACCOUNT0, ...s.account },
+      }
+    }
   } catch {
     /* storage unavailable or corrupt: start from demo data */
   }
   const dark = typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
   return { data: seed(), theme: dark ? 'dark' : 'light', account: ACCOUNT0 }
 }
+
+const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
+  [{ p, text, ts: Date.now() }, ...list].slice(0, 200)
+
+const statusActivity = (actor: string, title: string, status: Task['status']) =>
+  status === 'done' ? `${actor} menyelesaikan "${title}"` : `${actor} memindah "${title}" ke ${STATUS[status]}`
 
 function useStoreValue() {
   const initial = useMemo(load, [])
@@ -71,6 +88,8 @@ function useStoreValue() {
   const timer = useRef<number>(undefined)
   const dataRef = useRef(data)
   dataRef.current = data
+  const accountRef = useRef(account)
+  accountRef.current = account
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -104,24 +123,43 @@ function useStoreValue() {
     })
   }, [say])
 
-  const mapTasks = (fn: (t: Task) => Task) => setData(d => ({ ...d, tasks: d.tasks.map(fn) }))
-
-  const updateTask = useCallback((id: string, patch: Partial<Task>) => mapTasks(t => (t.id === id ? { ...t, ...patch } : t)), [])
+  const updateTask = useCallback((id: string, patch: Partial<Task>) => {
+    setData(d => {
+      const t0 = d.tasks.find(x => x.id === id)
+      const activity = t0?.project && patch.status && patch.status !== t0.status
+        ? pushActivity(d.activity, t0.project, statusActivity(accountRef.current.name, t0.title, patch.status))
+        : d.activity
+      return { ...d, tasks: d.tasks.map(t => (t.id === id ? { ...t, ...patch } : t)), activity }
+    })
+  }, [])
 
   const toggleTask = useCallback((id: string) => {
     const t = dataRef.current.tasks.find(x => x.id === id)
     if (!t) return
+    if (t.status !== 'done') feedback('done', accountRef.current)
     if (t.rec && t.status !== 'done') {
       const n = nextActiveOccurrence(t)
-      undoable(`Selesai. Diulang ke ${fmtDay(n)}`, d => ({ ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, due: n, start: null, status: 'todo' } : x)) }))
+      undoable(`Selesai. Diulang ke ${fmtDay(n)}`, d => ({
+        ...d,
+        tasks: d.tasks.map(x => (x.id === id ? { ...x, due: n, start: null, status: 'todo' } : x)),
+        activity: t.project ? pushActivity(d.activity, t.project, statusActivity(accountRef.current.name, t.title, 'done')) : d.activity,
+      }))
       return
     }
     updateTask(id, { status: t.status === 'done' ? 'todo' : 'done' })
   }, [undoable, updateTask])
 
   const setStatus = useCallback((id: string, status: Task['status'], withUndo = false) => {
-    if (withUndo) undoable(`Dipindah ke ${STATUS[status]}`, d => ({ ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, status } : x)) }))
-    else updateTask(id, { status })
+    if (status === 'done' && dataRef.current.tasks.find(x => x.id === id)?.status !== 'done') feedback('done', accountRef.current)
+    if (withUndo) {
+      undoable(`Dipindah ke ${STATUS[status]}`, d => {
+        const t0 = d.tasks.find(x => x.id === id)
+        const activity = t0?.project && status !== t0.status
+          ? pushActivity(d.activity, t0.project, statusActivity(accountRef.current.name, t0.title, status))
+          : d.activity
+        return { ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, status } : x)), activity }
+      })
+    } else updateTask(id, { status })
   }, [undoable, updateTask])
 
   const deleteTask = useCallback((id: string) => {
@@ -129,11 +167,20 @@ function useStoreValue() {
     undoable('Tugas dihapus', d => ({ ...d, tasks: d.tasks.filter(x => x.id !== id) }))
   }, [setUI, undoable])
 
+  const clearGuides = useCallback(() => {
+    undoable('Tugas panduan dihapus', d => ({ ...d, tasks: d.tasks.filter(t => !t.guide) }))
+  }, [undoable])
+
   const moveToToday = useCallback((id: string) => updateTask(id, { due: today(), start: null }), [updateTask])
   const moveAllOverdue = useCallback(() => {
     const t0 = today()
-    mapTasks(t => (isOverdue(t, t0) ? { ...t, due: t0, start: null } : t))
-  }, [])
+    const n = dataRef.current.tasks.filter(t => isOverdue(t, t0)).length
+    if (!n) return
+    undoable(`${n} tugas digeser ke Hari Ini`, d => ({
+      ...d,
+      tasks: d.tasks.map(t => (isOverdue(t, t0) ? { ...t, due: t0, start: null } : t)),
+    }))
+  }, [undoable])
 
   const moveTask = useCallback((t: Task, v: Dest) => {
     const d = parseDest(v)
@@ -150,7 +197,11 @@ function useStoreValue() {
       assignee: p ? (input.pic && p.members.includes(input.pic) ? input.pic : 'me') : null,
       status: 'todo', prio: input.prio, start: null, due: input.due, time: null, notes: '', rec: null, dur: null,
     }
-    setData(x => ({ ...x, tasks: [t, ...x.tasks] }))
+    setData(x => ({
+      ...x,
+      tasks: [t, ...x.tasks],
+      activity: d.project ? pushActivity(x.activity, d.project, `${accountRef.current.name} menambahkan "${input.title}"`) : x.activity,
+    }))
     return t
   }, [])
 
@@ -198,8 +249,54 @@ function useStoreValue() {
 
   const deleteProject = useCallback((p: Project) => {
     setUIState(u => ({ ...u, view: 'projects', archives: false, taskId: null, overlay: null }))
-    undoable(`"${p.name}" dihapus`, d => ({ ...d, projects: d.projects.filter(x => x.id !== p.id), tasks: d.tasks.filter(t => t.project !== p.id) }))
+    undoable(`"${p.name}" dihapus`, d => ({
+      ...d,
+      projects: d.projects.filter(x => x.id !== p.id),
+      tasks: d.tasks.filter(t => t.project !== p.id),
+      activity: d.activity.filter(a => a.p !== p.id),
+    }))
   }, [undoable])
+
+  /* ----- Bagikan proyek ----- */
+  const resetInviteToken = useCallback((pid: string) => {
+    const cur = dataRef.current.projects.find(p => p.id === pid)?.inviteToken
+    let tok = (Math.random().toString(36) + '00000').slice(2, 7)
+    while (tok === cur) tok = (Math.random().toString(36) + '00000').slice(2, 7)
+    updateProject(pid, { inviteToken: tok })
+    say('Tautan baru dibuat. Tautan lama tidak berlaku lagi.')
+  }, [say, updateProject])
+
+  const removeMember = useCallback((pid: string, mid: string) => {
+    if (mid === 'me') return
+    const name = PEOPLE[mid]?.name ?? mid
+    undoable(`${name} dikeluarkan`, d => ({
+      ...d,
+      projects: d.projects.map(p => (p.id === pid ? { ...p, members: p.members.filter(x => x !== mid) } : p)),
+      tasks: d.tasks.map(t => (t.project === pid && t.assignee === mid ? { ...t, assignee: 'me' } : t)),
+      activity: pushActivity(d.activity, pid, `${name} dikeluarkan dari proyek`),
+    }))
+  }, [undoable])
+
+  const simulateJoin = useCallback((pid: string) => {
+    const p = dataRef.current.projects.find(x => x.id === pid)
+    if (!p) return
+    const limit = isPro ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
+    if (p.members.length >= limit) {
+      say(isPro ? `Kuota ${PRO_MEMBER_QUOTA} anggota penuh` : 'Teman melihat "Proyek ini sudah penuh"')
+      return
+    }
+    const nx = MEMBER_POOL.find(x => !p.members.includes(x))
+    if (!nx) {
+      say('Semua orang contoh sudah bergabung')
+      return
+    }
+    const name = PEOPLE[nx].name
+    setData(d => ({
+      ...mapProject(d, pid, x => (x.members.includes(nx) ? x : { ...x, members: [...x.members, nx] })),
+      activity: pushActivity(d.activity, pid, `${name} bergabung lewat tautan undangan`),
+    }))
+    say(`${name} bergabung`)
+  }, [isPro, say])
 
   /* ----- Kelola area ----- */
   const updateArea = useCallback((id: string, patch: Partial<Area>) => setData(d => ({
@@ -218,6 +315,7 @@ function useStoreValue() {
   const deleteArea = useCallback((a: Area) => {
     setUIState(u => ({ ...u, inboxArea: 'all', projArea: 'all' }))
     undoable(`Area "${a.name}" dihapus`, d => ({
+      ...d,
       areas: d.areas.filter(x => x.id !== a.id),
       tasks: d.tasks.map(t => (t.area === a.id ? { ...t, area: null } : t)),
       projects: d.projects.map(p => (p.area === a.id ? { ...p, area: null } : p)),
@@ -247,9 +345,9 @@ function useStoreValue() {
     say('Berhasil masuk')
   }, [say])
 
-  const register = useCallback((name: string) => {
-    const s0 = seed()
-    setData({ tasks: [], projects: [], areas: s0.areas })
+  const register = useCallback((name: string, areaIds: string[] = DEFAULT_AREA_IDS) => {
+    const areas = AREA_PRESETS.map((a, i) => ({ ...a, color: AREA_COLORS[i] })).filter(a => areaIds.includes(a.id))
+    setData({ tasks: guideTasks(), projects: [], areas, activity: [] })
     setAccountState(a => ({ ...a, loggedIn: true, demo: false, name, plan: 'free', accent: 'indigo', onboarding: true, checkedAreas: false }))
     setUIState(UI0())
     say(`Akun dibuat. Selamat datang, ${name}!`)
@@ -276,8 +374,9 @@ function useStoreValue() {
 
   return {
     ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro, startDemo, signIn, register, signOut, buyPro, go, toast, setToast, say,
-    updateTask, toggleTask, setStatus, deleteTask, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
-    renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, updateArea, addArea, deleteArea,
+    updateTask, toggleTask, setStatus, deleteTask, clearGuides, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
+    renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,
+    updateArea, addArea, deleteArea,
     todayTasks: data.tasks.filter(t => inToday(t)),
     overdueTasks: data.tasks.filter(t => isOverdue(t)),
   }

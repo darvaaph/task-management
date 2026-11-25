@@ -60,7 +60,7 @@ Tiga opsi arsitektur telah dibandingkan:
 
 ### 5.1 Entitas Inti (*PARA-Lite + GTD*)
 1. **Areas (Ruang / Bidang Berkelanjutan):**
-   - Wadah tingkat atas untuk memisahkan bidang kehidupan yang terus berjalan tanpa batas akhir (saat akun baru dibuat, otomatis tersedia 3 *Area* bawaan: `Kuliah / Belajar`, `Kantor / Kerja`, dan `Pribadi / Rumah` — dapat ditambah, diubah nama, atau dihapus pengguna).
+   - Wadah tingkat atas untuk memisahkan bidang kehidupan yang terus berjalan tanpa batas akhir (saat mendaftar, pengguna memilih *Area* awal dari preset: `Kuliah`, `Kantor`, `Pribadi` (tercentang bawaan), `Sekolah`, `Usaha`, `Organisasi`; minimal satu, dan "Lewati" memakai 3 bawaan — dapat ditambah, diubah nama, atau dihapus pengguna) `[Keputusan Desain 0.9]`.
    - Atribut: `Nama`, `Warna`, `Urutan`.
    - Fungsi: Menyaring seluruh *Project* dan *Tugas Lepas* di bidang tertentu dari *sidebar* atau filter tanpa mencampurkan urusan kuliah, pekerjaan, dan rumah.
 2. **Tugas Lepas (*Quick Task / Inbox*):**
@@ -211,7 +211,7 @@ flowchart TD
 
 ## 8. Model Data & Arsitektur Backend Konseptual
 - **`users`**: `id`, `email`, `display_name`, `avatar_url`, `plan_tier` (`free` | `pro_lifetime`), `pro_source` (`web` | `google_play` | `manual`), `pro_purchased_at`, `theme_accent`, `created_at`
-- **`areas`**: `id`, `user_id`, `name`, `color`, `sort_order`, `created_at` *(3 bawaan otomatis saat pendaftaran, dapat disesuaikan pengguna)*
+- **`areas`**: `id`, `user_id`, `name`, `color`, `sort_order`, `created_at` *(dibuat dari pilihan area awal saat pendaftaran, dapat disesuaikan pengguna)*
 - **`projects`**: `id`, `owner_id`, `area_id` (nullable), `title`, `description`, `color`, `start_date`, `due_date`, `is_archived`, `invite_token`, `created_at`
 - **`project_members`**: `project_id`, `user_id`, `role` (`owner` | `member`), `joined_at`
 - **`project_sections`**: `id`, `project_id`, `title`, `sort_order`

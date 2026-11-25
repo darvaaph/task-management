@@ -61,8 +61,8 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
           <div className="flex items-center gap-4">
             <button type="button" onClick={() => s.go('projects')} className="border-0 bg-transparent py-3 text-[15px] font-medium text-accent">‹ Proyek</button>
             <span className="flex-1" />
-            {members}
-            <button type="button" onClick={() => s.setUI({ overlay: 'project' })} className="ml-2 h-18 rounded-pill border border-line2 bg-transparent px-7 text-[13px] font-medium text-fg">Kelola</button>
+            <button type="button" onClick={() => s.setUI({ overlay: 'share' })} className="h-18 rounded-pill border border-line2 bg-transparent px-7 text-[13px] font-medium text-fg">Bagikan</button>
+            <button type="button" onClick={() => s.setUI({ overlay: 'project' })} className="h-18 rounded-pill border border-line2 bg-transparent px-7 text-[13px] font-medium text-fg">Kelola</button>
           </div>
           {archivedBanner}
           <div className="flex items-center gap-4">
@@ -98,7 +98,8 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
         </div>
         <div className="flex items-center gap-5">
           {members}
-          <button type="button" onClick={() => s.setUI({ overlay: 'project' })} className="ml-4 h-17 rounded-[8px] border border-line2 bg-surface px-7 text-[13px] font-medium text-fg">Kelola</button>
+          <button type="button" onClick={() => s.setUI({ overlay: 'share' })} className="ml-4 h-17 rounded-[8px] border border-line2 bg-surface px-7 text-[13px] font-medium text-fg">Bagikan</button>
+          <button type="button" onClick={() => s.setUI({ overlay: 'project' })} className="h-17 rounded-[8px] border border-line2 bg-surface px-7 text-[13px] font-medium text-fg">Kelola</button>
           {sw}
         </div>
       </div>

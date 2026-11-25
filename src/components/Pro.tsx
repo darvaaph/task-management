@@ -12,6 +12,7 @@ const CTX: Partial<Record<ProCtx, string>> = {
   proj: 'Paket Gratis dibatasi 5 proyek aktif. Pro membuka batas ini.',
   accent: 'Warna aksen selain Indigo termasuk di Pro.',
   rem: 'Pengingat ganda termasuk di Pro, misalnya H-1 dan 30 menit sebelum tenggat.',
+  share: 'Pro menaikkan batas anggota proyek bersama dari 3 ke 20 dan membuka riwayat aktivitas.',
 }
 
 const ROWS: [string, string, string, string][] = [
@@ -72,8 +73,8 @@ export function ProScreen({ mobile }: { mobile: boolean }) {
     </>
   )
   return mobile
-    ? <Sheet onClose={close} label="TaskFlow Pro" maxH="92%">{body}</Sheet>
-    : <Modal onClose={close} label="TaskFlow Pro" width={560}>{body}</Modal>
+    ? <Sheet onClose={close} label="TaskFlow Pro" maxH="92%" elevated>{body}</Sheet>
+    : <Modal onClose={close} label="TaskFlow Pro" width={560} elevated>{body}</Modal>
 }
 
 /** Shown in place of a Pro view for free accounts: the feature stays visible, with a way to upgrade. */

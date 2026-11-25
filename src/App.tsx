@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { QuickSheet } from './components/Composer'
 import { ManageAreas, ManageProject } from './components/Manage'
+import { ShareProject } from './components/Share'
 import { Search, SearchButton } from './components/Search'
 import { AccentPicker, ProBadge, ProScreen } from './components/Pro'
 import { AuthView } from './views/AuthView'
@@ -8,6 +9,8 @@ import { IconCalendar, IconFolder, IconInbox, IconToday } from './components/ico
 import { DetailPanel, DetailSheet } from './components/TaskDetail'
 import { Segmented, Sheet } from './components/ui'
 import { FREE_PROJECT_QUOTA } from './lib/constants'
+import { searchShortcut, useMedia, useTouch } from './lib/device'
+import { canVibrate } from './lib/feedback'
 import { projectProgress } from './lib/logic'
 import { useStore, type Store, type View } from './store'
 import { InboxView } from './views/InboxView'
@@ -15,18 +18,6 @@ import { ProjectView } from './views/ProjectView'
 import { ProjectsView } from './views/ProjectsView'
 import { TodayView } from './views/TodayView'
 import { JadwalView } from './views/JadwalView'
-
-function useIsMobile() {
-  const q = '(max-width: 767px)'
-  const [m, setM] = useState(() => matchMedia(q).matches)
-  useEffect(() => {
-    const mq = matchMedia(q)
-    const h = () => setM(mq.matches)
-    mq.addEventListener('change', h)
-    return () => mq.removeEventListener('change', h)
-  }, [])
-  return m
-}
 
 const NAV: { view: View; label: string; Icon: typeof IconToday }[] = [
   { view: 'today', label: 'Hari Ini', Icon: IconToday },
@@ -37,11 +28,16 @@ const NAV: { view: View; label: string; Icon: typeof IconToday }[] = [
 const planLabel = (a: Store['account']) => (a.demo ? 'Mode Demo' : a.plan === 'pro' ? 'Pro · selamanya' : 'Gratis')
 const initial = (name: string) => (name.trim()[0] || 'A').toUpperCase()
 
+const ONOFF = [{ value: 'off' as const, label: 'Mati' }, { value: 'on' as const, label: 'Nyala' }]
+const onoff = (v?: boolean) => (v ? 'on' : 'off')
+
 const isActive = (cur: View, v: View) => cur === v || (v === 'projects' && cur === 'project')
 
 export default function App() {
   const s = useStore()
-  const mobile = useIsMobile()
+  const mobile = useMedia('(max-width: 767px)')
+  // Below laptop width (iPad, small windows) the detail panel floats over the page instead of taking a column.
+  const wide = useMedia('(min-width: 1100px)')
   const [quick, setQuick] = useState(false)
   const [profile, setProfile] = useState(false)
   const sel = s.ui.taskId ? s.tasks.find(t => t.id === s.ui.taskId) : undefined
@@ -59,6 +55,7 @@ export default function App() {
     <>
       {s.ui.overlay === 'search' && <Search mobile={mobile} />}
       {s.ui.overlay === 'project' && proj && <ManageProject project={proj} mobile={mobile} />}
+      {s.ui.overlay === 'share' && proj && <ShareProject project={proj} mobile={mobile} />}
       {s.ui.overlay === 'areas' && <ManageAreas mobile={mobile} />}
       {s.ui.pro && <ProScreen mobile={mobile} />}
     </>
@@ -82,9 +79,9 @@ export default function App() {
     return (
       <div className="flex h-full flex-col bg-bg">
         {s.account.demo && s.ui.banner && <DemoBanner mobile />}
-        <main key={pageKey} className="min-h-0 flex-1 overflow-auto pb-[110px]">{page}</main>
-        <button type="button" aria-label="Tambah tugas" onClick={() => setQuick(true)} className="fixed right-10 bottom-[104px] z-[4] size-29 rounded-fab border-0 bg-accent text-[30px] leading-none text-on-accent shadow-fab">+</button>
-        <nav aria-label="Menu utama" className="fixed inset-x-0 bottom-0 z-[4] grid h-[88px] grid-cols-4 border-t border-line bg-surface px-4 pt-3">
+        <main key={pageKey} className="min-h-0 flex-1 overflow-auto pb-[calc(86px+var(--nav-pad))]">{page}</main>
+        <button type="button" aria-label="Tambah tugas" onClick={() => setQuick(true)} className="fixed right-10 bottom-[calc(80px+var(--nav-pad))] z-[4] size-29 rounded-fab border-0 bg-accent text-[30px] leading-none text-on-accent shadow-fab">+</button>
+        <nav aria-label="Menu utama" className="fixed inset-x-0 bottom-0 z-[4] grid h-[calc(64px+var(--nav-pad))] grid-cols-4 content-start border-t border-line bg-surface px-4 pt-3">
           {NAV.map(({ view, label, Icon }) => {
             const on = isActive(s.ui.view, view)
             return (
@@ -111,7 +108,7 @@ export default function App() {
         {s.account.demo && s.ui.banner && <DemoBanner />}
         <main key={pageKey} className={`min-h-0 flex-1 overflow-auto ${s.ui.view === 'jadwal' ? 'px-14 pt-12 pb-10' : 'px-22 pt-16 pb-24'}`}>{page}</main>
       </div>
-      {sel && <DetailPanel key={sel.id} task={sel} />}
+      {sel && <DetailPanel key={sel.id} task={sel} floating={!wide} />}
       {overlays}
       <Toast />
     </div>
@@ -132,7 +129,7 @@ function Sidebar() {
         <span className="font-display text-[17px] font-semibold">TaskFlow</span>
       </div>
       <button type="button" onClick={() => s.setUI({ overlay: 'search' })} className="flex h-17 items-center justify-between rounded-[8px] border-0 bg-surface2 px-5 text-left text-[13px] text-fg3">
-        <span>Cari cepat…</span><span className="font-mono text-[11px]">⌘K</span>
+        <span>Cari cepat…</span><span className="font-mono text-[11px]">{searchShortcut}</span>
       </button>
       <nav aria-label="Menu utama" className="flex flex-col gap-1">
         {NAV.map(({ view, label, Icon }) => {
@@ -193,6 +190,7 @@ function Sidebar() {
       )}
       <Segmented value={s.theme} onChange={s.setTheme} options={[{ value: 'light', label: 'Terang' }, { value: 'dark', label: 'Gelap' }]} full />
       <div className="flex items-center justify-between px-3"><span className="text-[12px] text-fg2">Aksen</span><AccentPicker /></div>
+      <div className="flex items-center justify-between px-3"><span className="text-[12px] text-fg2">Suara</span><Segmented value={onoff(s.account.sound)} onChange={v => s.setAccount({ sound: v === 'on' })} options={ONOFF} /></div>
       <div className="flex items-center gap-5 px-3">
         <span aria-hidden="true" className="grid size-14 place-items-center rounded-full bg-accent text-[12px] font-semibold text-on-accent">{initial(s.account.name)}</span>
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -225,6 +223,7 @@ function ProfileButton({ onClick }: { onClick: () => void }) {
 function ProfileSheet({ onClose }: { onClose: () => void }) {
   const s = useStore()
   const owned = s.projects.filter(p => !p.archived).length
+  const vibrate = useTouch() && canVibrate
   const row = 'flex items-center gap-5 border-b border-line'
   return (
     <Sheet onClose={onClose} label="Profil">
@@ -240,6 +239,16 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
           <span className="flex-1 text-fg2">Tema</span>
           <Segmented value={s.theme} onChange={s.setTheme} options={[{ value: 'light', label: 'Terang' }, { value: 'dark', label: 'Gelap' }]} />
         </div>
+        <div className={`${row} py-4 pr-4 pl-7`}>
+          <span className="flex-1 text-fg2">Suara saat selesai</span>
+          <Segmented value={onoff(s.account.sound)} onChange={v => s.setAccount({ sound: v === 'on' })} options={ONOFF} />
+        </div>
+        {vibrate && (
+          <div className={`${row} py-4 pr-4 pl-7`}>
+            <span className="flex-1 text-fg2">Getaran</span>
+            <Segmented value={onoff(s.account.haptics)} onChange={v => s.setAccount({ haptics: v === 'on' })} options={ONOFF} />
+          </div>
+        )}
         <button type="button" onClick={() => { onClose(); s.setUI({ overlay: 'areas' }) }} className={`${row} border-x-0 border-t-0 bg-transparent p-7 text-left text-fg`}>
           <span className="flex-1">Kelola area</span><span aria-hidden="true" className="text-fg3">›</span>
         </button>
@@ -250,7 +259,7 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       {s.account.demo && <button type="button" onClick={() => { s.resetDemo(); onClose() }} className="h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg">Reset data demo</button>}
-      <button type="button" onClick={s.signOut} className="h-24 rounded-[12px] border border-line2 bg-transparent text-[15px] font-medium text-high">Keluar</button>
+      <button type="button" onClick={() => { onClose(); s.signOut() }} className="h-24 rounded-[12px] border border-line2 bg-transparent text-[15px] font-medium text-high">Keluar</button>
     </Sheet>
   )
 }
@@ -259,7 +268,7 @@ function Toast({ mobile }: { mobile?: boolean }) {
   const { toast } = useStore()
   if (!toast) return null
   return (
-    <div role="status" className={`animate-fade fixed left-1/2 z-[50] flex min-h-20 max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-7 rounded-md bg-fg py-4 pr-4 pl-9 text-[13px] font-medium text-bg shadow-[0_24px_60px_-20px_rgba(0,0,0,.5)] ${mobile ? 'bottom-[176px]' : 'bottom-14'}`}>
+    <div role="status" className={`animate-fade fixed left-1/2 z-[50] flex min-h-20 max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-7 rounded-md bg-fg py-4 pr-4 pl-9 text-[13px] font-medium text-bg shadow-[0_24px_60px_-20px_rgba(0,0,0,.5)] ${mobile ? 'bottom-[calc(152px+var(--nav-pad))]' : 'bottom-14'}`}>
       <span className="py-1.5 pr-5">{toast.msg}</span>
       {toast.undo && <button type="button" onClick={toast.undo} className="h-15 rounded-sm border border-current bg-transparent px-6 text-[13px] font-semibold text-bg">Urungkan</button>}
     </div>

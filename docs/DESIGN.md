@@ -205,7 +205,7 @@ Hover desktop: border menjadi `--line2`.
 
 ### 6.8 Navigasi bawah (HP)
 
-- Tinggi 88 px termasuk area home indicator. Empat menu: **Hari Ini · Inbox · Jadwal · Proyek**.
+- Tinggi 64 px ditambah `max(24 px, env(safe-area-inset-bottom))`: 88 px tanpa home indicator, 98 px di iPhone dengan home indicator. FAB, toast, dan padding bawah halaman ikut naik sebesar nilai yang sama. Empat menu: **Hari Ini · Inbox · Jadwal · Proyek**.
 - Aktif: ikon di dalam pill 56 × 30 berlatar `--accent-soft`, ikon dan label `--accent`, label 600.
 - Tidak aktif: tanpa pill, warna `--fg2`, label 500.
 - Fitur terkunci (Pro) **tidak boleh** jadi menu utama.
@@ -316,13 +316,14 @@ Satu layar masuk dengan empat keadaan: **Masuk**, **Daftar**, **Lupa kata sandi*
 - **Pengingat** berupa chip. Tugas berjam: 10 mnt, 30 mnt, 1 jam sebelum, H-1 09:00. Tugas tanpa jam: Hari H, H-1, H-3 pukul 09:00. Bawaan: 30 mnt sebelum (berjam) atau Hari H (tanpa jam). Gratis memilih satu (memilih chip lain menggantinya); Pro bisa beberapa. Tanpa tanggal: "Atur tanggal dulu".
 - **PIC saat menambah tugas:** kalau tujuan adalah proyek bersama, baris "PIC" berisi avatar anggota muncul di composer. Bawaan: Anda.
 
-### 6.23 Geser dan lepas (desktop)
+### 6.23 Geser dan lepas (mouse)
 
 - Board: kartu digeser antarkolom untuk mengganti status.
 - Bulan: chip tugas digeser ke tanggal lain. Tugas dengan tanggal mulai ikut bergeser utuh.
 - Minggu: blok digeser ke jam dan hari lain (dibulatkan 15 menit); digeser ke baris Sepanjang hari untuk menghapus jamnya.
 - Target yang sedang dilewati berlatar `--accent-soft` (Board juga garis putus-putus aksen). Setiap pemindahan memunculkan toast dengan Urungkan.
 - Tidak bisa digeser: tenggat proyek, tugas selesai, jadwal berulang yang akan datang. HP tetap memakai tombol (Mulai → / Selesai →) dan pilihan tanggal.
+- Perangkat sentuh dengan layar lebar (iPad, tablet Android) memakai tata letak desktop, tetapi Timeline mengikuti aturan HP: batang hanya bisa digeser setelah "Ubah jadwal".
 
 ### 6.24 Jadwal berulang yang akan datang
 
@@ -338,7 +339,7 @@ Tombol "Bagikan" di header detail proyek (desktop dan HP).
 
 ### 6.26 Keadaan kosong dan akun baru
 
-Akun baru dari Daftar mulai **kosong** (area bawaan tetap ada). Hari Ini menampilkan kartu sambutan dengan 3 langkah (catat tugas, buat proyek, cek area) yang tercentang otomatis dan bisa dilewati. Setiap halaman punya keadaan kosong sendiri yang menjelaskan apa yang akan muncul dan memberi satu aksi: Hari Ini (Buka Inbox), Inbox, Proyek (+ Proyek baru), Arsip, detail proyek.
+Akun baru dari Daftar mulai **kosong** (area yang dipilih di 6.29 tetap ada). Hari Ini menampilkan kartu sambutan dengan 3 langkah (catat tugas, buat proyek, cek area) yang tercentang otomatis dan bisa dilewati. Setiap halaman punya keadaan kosong sendiri yang menjelaskan apa yang akan muncul dan memberi satu aksi: Hari Ini (Buka Inbox), Inbox, Proyek (+ Proyek baru), Arsip, detail proyek.
 
 ### 6.27 Tampilan Mingguan
 
@@ -354,6 +355,31 @@ Akun baru dari Daftar mulai **kosong** (area bawaan tetap ada). Hari Ini menampi
 - Di bawahnya agenda hari terpilih: **Sepanjang hari**, lalu **Berjam** dengan kolom jam 48 px dan garis warna proyek di kiri setiap tugas.
 
 ---
+
+### 6.28 Perangkat dan platform
+
+- **Ukuran layar:** HP < 768 px (navigasi bawah). Tablet 768–1099 px: sidebar tetap, **panel detail melayang** di kanan di atas isi (latar gelap tipis, ketuk di luar untuk menutup). Laptop ≥ 1100 px: panel detail menjadi kolom 360 px seperti biasa.
+- **Jenis input** ditentukan dari `pointer: coarse`, bukan dari lebar layar. Perangkat sentuh: isian teks minimal 16 px (mencegah zoom otomatis di iOS Safari), dan geser-batang Timeline memakai mode "Ubah jadwal". Jangan memakai `maximum-scale=1`, karena mematikan zoom aksesibilitas.
+- **Safe-area:** navigasi bawah, FAB, dan toast memakai `env(safe-area-inset-bottom)`. Tinggi layar memakai `dvh`, bukan `vh`.
+- **Pintasan:** label ditulis ⌘K di Mac, iPhone, dan iPad; Ctrl+K di Windows, Linux, dan Android. Keduanya tetap berfungsi di semua platform.
+
+### 6.29 Pilih area awal
+
+Langkah kedua di layar Daftar (setelah nama, email, kata sandi lolos): "Pilih area yang kamu jalani". Chip area (`Chip`, bisa lebih dari satu): **Kuliah, Kantor, Pribadi** (tercentang bawaan), **Sekolah, Usaha, Organisasi**; masing-masing memakai warna `AREA_COLORS` di urutan yang sama. Minimal satu area ("Pilih minimal satu area."). Tombol utama "Lanjut", tautan "‹ Kembali" (isian tetap terisi) dan "Lewati" (memakai 3 area bawaan). Tidak memakan kuota proyek. Area tetap bisa diubah di Kelola area.
+
+### 6.30 Tugas panduan
+
+Akun baru mendapat 3 tugas panduan di Inbox (`guideTasks()` di `seed.ts`), **tanpa tanggal** (tidak pernah jadi Terlambat), prioritas Sedang, ditandai `guide`, masing-masing dengan catatan penjelasan: centang tugas, buka detail, hapus tugas. Di perangkat sentuh ada tugas keempat (urutan kedua): "Usap tugas ini ke kanan atau ke kiri". Kartu sambutan tetap ada; langkah "Catat tugas pertama" hanya tercentang oleh tugas buatan sendiri. Di bawah langkah-langkah ada baris "x tugas panduan menunggu di Inbox" + Buka Inbox + "Hapus semua panduan" (toast dengan Urungkan). Tidak ada proyek panduan (kuota 5 proyek tidak terpakai).
+
+### 6.31 Usap baris tugas (perangkat sentuh)
+
+Istilahnya **usap**, karena "geser" sudah berarti "Geser ke Hari Ini". Hanya aktif bila `pointer: coarse` (mouse tidak pernah mengusap). Usap ke kanan = Selesai (atau "Belum selesai" untuk tugas selesai). Usap ke kiri = membuka dialog **Jadwalkan** (Hari ini · Besok · Senin depan · Pilih tanggal; `Sheet` di HP, `Modal` di tablet), lalu `moveDue` dengan toast Urungkan. Ambang 35 % lebar baris; di bawahnya baris kembali. Label aksi tampil di celah yang terbuka, redup sebelum ambang dan penuh setelahnya. Gerak vertikal di atas 10 px membatalkan usap supaya daftar tetap bisa digulir. Latar aksi memakai token (`--low-soft`, `--accent-soft`) dengan label teks. Tidak aktif di 20 px tepi kiri (gestur kembali iOS), di Timeline, dan di kisi Minggu. Semua aksi juga tersedia lewat tombol atau detail tugas.
+
+### 6.32 Gerak, suara, dan getaran
+
+- Gerak memakai token `--dur-*` dan `--ease-*` (otomatis 0 saat `prefers-reduced-motion`). Centang: lingkaran memantul 0.85→1.1→1 (`animate-pop`, `--dur-sheet`) hanya saat user mencentang, bukan saat baris yang sudah selesai muncul; warna lingkaran dan judul berganti halus. Progress bar beranimasi dengan `--dur-bar`. Tanpa konfeti.
+- Suara: satu bunyi lembut (sekitar 0,2 detik, dibuat dengan Web Audio tanpa file) saat tugas selesai lewat centang, usap, Board, atau status. **Mati secara bawaan.** Sakelar Mati/Nyala (`Segmented`): "Suara saat selesai" di profil HP, "Suara" di sidebar desktop. Perilaku terhadap tombol senyap iPhone perlu diuji di perangkat.
+- Getaran: 12 ms saat tugas selesai, 8 ms saat ambang usap terlewati. **Mati secara bawaan.** Sakelar "Getaran" di profil HP hanya muncul di perangkat sentuh yang mendukung Vibration API. Web: Vibration API (Android). iOS Safari tidak mendukung; getaran iOS menunggu paket Capacitor.
 
 ## 7. Struktur navigasi
 
@@ -401,6 +427,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.9 (25 Nov 2026):** Perangkat dan platform (tablet, sentuh, safe-area, pintasan per platform). Rencana: pilih area awal, tugas panduan, usap baris, gerak/suara/getaran.
 - **0.8 (25 Nov 2026):** Tanggal mulai, pengingat, PIC saat menambah, geser-dan-lepas desktop, jadwal berulang di kalender, alur Bagikan + riwayat aktivitas, keadaan kosong dan sambutan akun baru.
 - **0.7 (25 Nov 2026):** Paket Gratis/Pro dan layar Pro, Timeline terkunci, tugas berulang, durasi tugas, warna aksen di profil, layar Daftar/Lupa kata sandi, pencarian ⌘K.
 - **0.6 (25 Nov 2026):** Kelola proyek (ubah, bagian, arsip, hapus), Kelola area, toast Urungkan, pemilih tanggal bebas. Area kini data yang bisa diubah, bukan konstanta.

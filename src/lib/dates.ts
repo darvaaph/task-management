@@ -74,3 +74,8 @@ export const monthLabel = (iso: ISODate) => {
 export const sameMonth = (a: ISODate, b: ISODate) => a.slice(0, 7) === b.slice(0, 7)
 export const dayNum = (iso: ISODate) => parse(iso).getDate()
 export const monthShort = (iso: ISODate) => MONTHS[parse(iso).getMonth()]
+
+export const agoLabel = (ts: number) => {
+  const m = Math.round((Date.now() - ts) / 60000)
+  return m < 1 ? 'baru saja' : m < 60 ? `${m} mnt lalu` : m < 1440 ? `${Math.round(m / 60)} jam lalu` : `${Math.round(m / 1440)} hari lalu`
+}

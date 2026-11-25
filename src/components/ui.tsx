@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode, type RefObject } from 'react'
 import { PRIO, PRIO_KEYS } from '../lib/constants'
 import type { Priority } from '../lib/types'
 
@@ -25,7 +25,7 @@ export function PrioBadge({ prio, small }: { prio: Priority; small?: boolean }) 
 export function ProgressBar({ pct, color = 'var(--accent)', h = 6 }: { pct: number; color?: string; h?: number }) {
   return (
     <div className="flex-1 overflow-hidden rounded-[9px] bg-surface2" style={{ height: h }}>
-      <div className="h-full rounded-[9px] transition-[width] duration-300" style={{ width: pct + '%', background: color }} />
+      <div className="h-full rounded-[9px] transition-[width] duration-(--dur-bar) ease-(--ease-standard)" style={{ width: pct + '%', background: color }} />
     </div>
   )
 }
@@ -121,13 +121,72 @@ export function EmptyCard({ title, children, action }: { title?: string; childre
 export const btnPrimary = 'h-17 rounded-[8px] border-0 bg-fg px-7 text-[13px] font-semibold text-bg whitespace-nowrap'
 export const btnSecondary = 'h-17 rounded-[8px] border border-line2 bg-transparent px-6 text-[13px] font-medium text-fg whitespace-nowrap'
 
-/** Bottom sheet (phone): overlay + panel sliding up, Esc closes. */
-export function Sheet({ onClose, children, label, maxH = '82%' }: { onClose: () => void; children: ReactNode; label: string; maxH?: string }) {
-  useEscape(onClose)
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+/** Open dialogs ordered bottom-to-top so only the topmost dialog handles Tab and Escape. */
+const dialogStack: HTMLElement[] = []
+
+/** Traps keyboard focus inside a modal/sheet, handles Escape for the topmost dialog, and restores focus on close. */
+export function useDialog(ref: RefObject<HTMLElement | null>, onClose: () => void) {
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  // Capture before commit so child autoFocus doesn't overwrite the triggering element.
+  const prevRef = useRef<HTMLElement | null | undefined>(undefined)
+  if (prevRef.current === undefined) {
+    prevRef.current = typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null
+  }
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const prev = prevRef.current
+    dialogStack.push(el)
+    if (!el.contains(document.activeElement)) el.focus({ preventScroll: true })
+    const onKey = (e: KeyboardEvent) => {
+      if (dialogStack[dialogStack.length - 1] !== el) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        closeRef.current()
+        return
+      }
+      if (e.key !== 'Tab') return
+      const list = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(n => n.getClientRects().length > 0)
+      if (!list.length) {
+        e.preventDefault()
+        el.focus()
+        return
+      }
+      const first = list[0], last = list[list.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (!active || !el.contains(active)) {
+        e.preventDefault()
+        ;(e.shiftKey ? last : first).focus()
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      const i = dialogStack.lastIndexOf(el)
+      if (i >= 0) dialogStack.splice(i, 1)
+      window.removeEventListener('keydown', onKey)
+      if (prev?.isConnected && (!document.activeElement || document.activeElement === document.body || el.contains(document.activeElement))) {
+        prev.focus({ preventScroll: true })
+      }
+    }
+  }, [ref])
+}
+
+/** Bottom sheet (phone): overlay + panel sliding up, focus trapped, Esc closes. */
+export function Sheet({ onClose, children, label, maxH = '82%', elevated }: { onClose: () => void; children: ReactNode; label: string; maxH?: string; elevated?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useDialog(ref, onClose)
   return (
     <>
-      <div className="animate-fade fixed inset-0 z-[8] bg-black/40" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={label} className="animate-up fixed inset-x-0 bottom-0 z-[9] flex flex-col gap-8 overflow-auto [&>*]:flex-none rounded-t-sheet bg-surface px-10 pt-5 pb-17" style={{ maxHeight: maxH }}>
+      <div className={`animate-fade fixed inset-0 bg-black/40 ${elevated ? 'z-[14]' : 'z-[8]'}`} onClick={onClose} />
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} className={`animate-up fixed inset-x-0 bottom-0 flex flex-col gap-8 overflow-auto [&>*]:flex-none rounded-t-sheet bg-surface px-10 pt-5 pb-[max(34px,calc(env(safe-area-inset-bottom)+12px))] outline-none ${elevated ? 'z-[15]' : 'z-[9]'}`} style={{ maxHeight: maxH }}>
         <span aria-hidden="true" className="h-2.5 w-19 flex-none self-center rounded-[9px] bg-line2" />
         {children}
       </div>
@@ -135,13 +194,14 @@ export function Sheet({ onClose, children, label, maxH = '82%' }: { onClose: () 
   )
 }
 
-/** Centered modal (desktop). */
-export function Modal({ onClose, children, label, width = 440 }: { onClose: () => void; children: ReactNode; label: string; width?: number }) {
-  useEscape(onClose)
+/** Centered modal (desktop): focus trapped, Esc closes. */
+export function Modal({ onClose, children, label, width = 440, elevated }: { onClose: () => void; children: ReactNode; label: string; width?: number; elevated?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useDialog(ref, onClose)
   return (
     <>
-      <div className="animate-fade fixed inset-0 z-[20] bg-black/30" onClick={onClose} />
-      <div role="dialog" aria-modal="true" aria-label={label} className="animate-fade fixed top-[60px] left-1/2 z-[21] flex max-h-[calc(100vh-120px)] -translate-x-1/2 flex-col gap-8 overflow-auto rounded-xl [&>*]:flex-none border border-line bg-surface p-11 shadow-[0_24px_60px_-20px_rgba(0,0,0,.35)]" style={{ width }}>
+      <div className={`animate-fade fixed inset-0 bg-black/30 ${elevated ? 'z-[30]' : 'z-[20]'}`} onClick={onClose} />
+      <div ref={ref} tabIndex={-1} role="dialog" aria-modal="true" aria-label={label} className={`animate-fade fixed top-[60px] left-1/2 flex max-h-[calc(100dvh-120px)] -translate-x-1/2 flex-col gap-8 overflow-auto rounded-xl [&>*]:flex-none border border-line bg-surface p-11 shadow-[0_24px_60px_-20px_rgba(0,0,0,.35)] outline-none ${elevated ? 'z-[31]' : 'z-[21]'}`} style={{ width }}>
         {children}
       </div>
     </>
@@ -150,7 +210,7 @@ export function Modal({ onClose, children, label, width = 440 }: { onClose: () =
 
 export function useEscape(fn: () => void) {
   useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === 'Escape' && fn()
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape' && dialogStack.length === 0) fn() }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [fn])

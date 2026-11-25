@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type PointerEvent as RPointerEvent } from 'react'
 import { TaskRow } from '../components/TaskRow'
-import { Segmented } from '../components/ui'
+import { Chip as AreaChip, Segmented } from '../components/ui'
 import { PRIO, REC_SHORT } from '../lib/constants'
 import {
   DAY_LETTER, DAY_SHORT, DAYS, addDays, addMinutes, addMonths, dayNum, diffDays, dow, fmt, monthLabel, monthShort,
@@ -10,6 +10,7 @@ import { byOpen, colorOf, hoursOf, virtualOccurrences } from '../lib/logic'
 import type { ISODate, Project, Task } from '../lib/types'
 import { useStore, type UI } from '../store'
 import { ProBadge, ProLocked } from '../components/Pro'
+import { useTouch } from '../lib/device'
 
 /* ---------- shared bits ---------- */
 
@@ -437,12 +438,15 @@ const SPAN = 35
 export function Timeline({ mobile, projectId }: { mobile?: boolean; projectId?: string }) {
   const s = useStore()
   const [edit, setEdit] = useState(false)
+  const [area, setArea] = useState<string>('all')
   const ppd = mobile ? 26 : 34
   const t0 = today()
   const from = addDays(startOfWeek(t0), -14)
   const days = Array.from({ length: SPAN }, (_, i) => addDays(from, i))
   const x = (d: ISODate) => diffDays(d, from) * ppd
-  const canDrag = !mobile || edit
+  // On touch screens a drag over a bar would fight horizontal scrolling, so bars move only in edit mode.
+  const touch = useTouch()
+  const canDrag = (!mobile && !touch) || edit
   const scroller = useRef<HTMLDivElement>(null)
   // Open with today in view (about a third from the left).
   useEffect(() => {
@@ -473,7 +477,23 @@ export function Timeline({ mobile, projectId }: { mobile?: boolean; projectId?: 
 
   type Row = { key: string; label: string; color: string; project: boolean; done: boolean; start: ISODate; due: ISODate; bg: string; border: string; txt: string; kind: 'p' | 't'; id: string; barLabel: string }
   const rows: Row[] = []
-  s.projects.filter(p => !p.archived && (!projectId || p.id === projectId)).forEach(p => {
+  const activeProjects = s.projects.filter(p => !p.archived)
+  const hasNoArea = activeProjects.some(p => !p.area)
+  const areaChips: [string, string, string][] = [
+    ['all', 'Semua', 'var(--fg3)'],
+    ...(hasNoArea ? [['none', 'Tanpa area', 'var(--fg3)'] as [string, string, string]] : []),
+    ...s.areas.map(a => [a.id, a.name, a.color] as [string, string, string]),
+  ]
+  const areaFilter = !projectId && (
+    <div className={`flex gap-4 ${mobile ? 'no-scrollbar overflow-x-auto px-10 pb-1' : 'flex-wrap'}`}>
+      {areaChips.map(([id, label, dot]) => (
+        <AreaChip key={id} size={mobile ? 'lg' : 'md'} dot={dot} active={area === id} onClick={() => setArea(id)}>{label}</AreaChip>
+      ))}
+    </div>
+  )
+  activeProjects
+    .filter(p => (projectId ? p.id === projectId : area === 'all' || (area === 'none' ? !p.area : p.area === area)))
+    .forEach(p => {
     rows.push({ key: p.id, label: p.name, color: p.color, project: true, done: false, start: p.start, due: p.due, bg: p.color, border: p.color, txt: '#fff', kind: 'p', id: p.id, barLabel: `${fmt(p.start)} – ${fmt(p.due)}` })
     s.tasks
       .filter(t => t.project === p.id && t.due)
@@ -525,32 +545,49 @@ export function Timeline({ mobile, projectId }: { mobile?: boolean; projectId?: 
     </div>
   )
 
+  const editBar = (
+    <div className={`flex items-center gap-5 ${mobile ? 'px-10' : ''}`}>
+      <span className="flex-1 text-[12.5px] text-fg3">{edit ? 'Mode ubah aktif: geser batang atau tarik ujung kanannya' : 'Geser layar untuk melihat. Ketuk Ubah jadwal untuk memindah batang.'}</span>
+      <button type="button" aria-pressed={edit} onClick={() => setEdit(!edit)} className={`h-17 flex-none whitespace-nowrap rounded-pill border px-6.5 text-[13px] font-medium ${edit ? 'border-accent bg-accent text-on-accent' : 'border-line2 bg-transparent text-fg'}`}>{edit ? 'Selesai' : 'Ubah jadwal'}</button>
+    </div>
+  )
+
   if (mobile) {
     return (
       <div className="flex flex-col gap-5">
-        <div className="flex items-center gap-5 px-10">
-          <span className="flex-1 text-[12.5px] text-fg3">{edit ? 'Mode ubah aktif: geser batang atau tarik ujung kanannya' : 'Geser layar untuk melihat. Ketuk Ubah jadwal untuk memindah batang.'}</span>
-          <button type="button" aria-pressed={edit} onClick={() => setEdit(!edit)} className={`h-17 flex-none whitespace-nowrap rounded-pill border px-6.5 text-[13px] font-medium ${edit ? 'border-accent bg-accent text-on-accent' : 'border-line2 bg-transparent text-fg'}`}>{edit ? 'Selesai' : 'Ubah jadwal'}</button>
-        </div>
-        <div ref={scroller} className="overflow-x-auto border-y border-line bg-surface">{grid}</div>
+        {areaFilter}
+        {editBar}
+        {rows.length > 0 ? (
+          <div ref={scroller} className="overflow-x-auto border-y border-line bg-surface">{grid}</div>
+        ) : (
+          <div className="px-10 py-6 text-[13px] text-fg3">Belum ada proyek aktif di area ini.</div>
+        )}
       </div>
     )
   }
 
   return (
-    <div ref={scroller} className={`min-h-0 overflow-auto rounded-[12px] border border-line bg-surface ${projectId ? 'max-h-[440px]' : 'flex-1'}`}>
-      <div className="flex min-w-max">
-        <div className="sticky left-0 z-[3] w-[220px] flex-none border-r border-line bg-surface">
-          <div className="border-b border-line" style={{ height: header }} />
-          {rows.map(r => (
-            <div key={r.key} className="flex items-center gap-4 border-b border-line pr-7" style={{ height: rowH, paddingLeft: r.project ? 14 : 30 }}>
-              <span aria-hidden="true" className="size-3.5 flex-none" style={{ background: r.color, borderRadius: r.project ? '50%' : 2 }} />
-              <span className={`truncate text-[13px] ${r.project ? 'font-semibold text-fg' : r.done ? 'text-fg3' : 'text-fg2'}`}>{r.label}</span>
+    <div className={`flex min-h-0 flex-col gap-5 ${projectId ? '' : 'flex-1'}`}>
+      {areaFilter}
+      {touch && rows.length > 0 && editBar}
+      {rows.length > 0 ? (
+        <div ref={scroller} className={`min-h-0 overflow-auto rounded-[12px] border border-line bg-surface ${projectId ? 'max-h-[440px]' : 'flex-1'}`}>
+          <div className="flex min-w-max">
+            <div className="sticky left-0 z-[3] w-[220px] flex-none border-r border-line bg-surface">
+              <div className="border-b border-line" style={{ height: header }} />
+              {rows.map(r => (
+                <div key={r.key} className="flex items-center gap-4 border-b border-line pr-7" style={{ height: rowH, paddingLeft: r.project ? 14 : 30 }}>
+                  <span aria-hidden="true" className="size-3.5 flex-none" style={{ background: r.color, borderRadius: r.project ? '50%' : 2 }} />
+                  <span className={`truncate text-[13px] ${r.project ? 'font-semibold text-fg' : r.done ? 'text-fg3' : 'text-fg2'}`}>{r.label}</span>
+                </div>
+              ))}
             </div>
-          ))}
+            {grid}
+          </div>
         </div>
-        {grid}
-      </div>
+      ) : (
+        <div className="rounded-[12px] border border-dashed border-line2 px-9 py-11 text-[13.5px] text-fg2">Belum ada proyek aktif di area ini.</div>
+      )}
     </div>
   )
 }

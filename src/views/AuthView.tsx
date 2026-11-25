@@ -1,12 +1,14 @@
 import { useState } from 'react'
+import { Chip } from '../components/ui'
+import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS } from '../lib/constants'
 import { useStore } from '../store'
 
-type Mode = 'login' | 'register' | 'forgot' | 'sent'
+type Mode = 'login' | 'register' | 'areas' | 'forgot' | 'sent'
 
 const okEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())
 
 /**
- * One sign-in screen with four states: Masuk, Daftar, Lupa kata sandi, Tautan terkirim.
+ * One sign-in screen: Masuk, Daftar (then Pilih area), Lupa kata sandi, Tautan terkirim.
  * There is no backend yet, so Masuk and Daftar only check the form and sign in on this device.
  */
 export function AuthView({ mobile }: { mobile: boolean }) {
@@ -16,6 +18,7 @@ export function AuthView({ mobile }: { mobile: boolean }) {
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
   const [err, setErr] = useState('')
+  const [picked, setPicked] = useState<string[]>(DEFAULT_AREA_IDS)
   const go = (m: Mode) => { setMode(m); setErr(''); setPass('') }
 
   const submit = () => {
@@ -27,7 +30,11 @@ export function AuthView({ mobile }: { mobile: boolean }) {
       if (!name.trim()) return setErr('Isi nama Anda.')
       if (!okEmail(email)) return setErr('Masukkan alamat email yang valid.')
       if (pass.length < 8) return setErr('Kata sandi minimal 8 karakter.')
-      s.register(name.trim())
+      // Keep the typed password so ‹ Kembali returns to a filled form.
+      setMode('areas'); setErr('')
+    } else if (mode === 'areas') {
+      if (!picked.length) return setErr('Pilih minimal satu area.')
+      s.register(name.trim(), picked)
     } else if (mode === 'forgot') {
       if (!okEmail(email)) return setErr('Masukkan alamat email yang valid.')
       go('sent')
@@ -88,6 +95,24 @@ export function AuthView({ mobile }: { mobile: boolean }) {
           <button type="button" onClick={submit} className={primary}>Daftar</button>
           <div className="text-center text-[12px] leading-normal text-fg3">Dengan mendaftar, Anda menyetujui Ketentuan Layanan dan Kebijakan Privasi TaskFlow.</div>
           <div className="text-center text-[13px] text-fg2">Sudah punya akun? <button type="button" onClick={() => go('login')} className={link}>Masuk</button></div>
+        </>
+      )}
+      {mode === 'areas' && (
+        <>
+          {head('Pilih area yang kamu jalani', 'Area memisahkan bidang hidup, misalnya kuliah dan kerja. Bisa diubah kapan saja di Kelola area.')}
+          {errBox}
+          <div role="group" aria-label="Area awal" className="flex flex-wrap gap-4">
+            {AREA_PRESETS.map((a, i) => (
+              <Chip key={a.id} size="lg" dot={AREA_COLORS[i]} active={picked.includes(a.id)} onClick={() => { setErr(''); setPicked(p => (p.includes(a.id) ? p.filter(x => x !== a.id) : [...p, a.id])) }}>
+                {a.name}
+              </Chip>
+            ))}
+          </div>
+          <button type="button" onClick={submit} className={primary}>Lanjut</button>
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => { setMode('register'); setErr('') }} className={link}>‹ Kembali</button>
+            <button type="button" onClick={() => s.register(name.trim())} className={link}>Lewati</button>
+          </div>
         </>
       )}
       {mode === 'forgot' && (

@@ -20,6 +20,8 @@ export interface Project {
   members: string[]
   sections: string[]
   archived: boolean
+  /** Custom invite link token created by Reset tautan; falls back to a deterministic token when omitted. */
+  inviteToken?: string
 }
 
 export interface Task {
@@ -39,6 +41,8 @@ export interface Task {
   dur: number | null
   /** Reminder keys, e.g. 'm30' or 'd1'. Missing = the default for the task. */
   rems?: string[]
+  /** Learn-by-doing task a new account starts with; cleared together by "Hapus semua panduan". */
+  guide?: boolean
 }
 
 export interface Person {
@@ -47,8 +51,15 @@ export interface Person {
   c: string
 }
 
+export interface Activity {
+  p: string
+  text: string
+  ts: number
+}
+
 export interface Data {
   tasks: Task[]
   projects: Project[]
   areas: Area[]
+  activity: Activity[]
 }

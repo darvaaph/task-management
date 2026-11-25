@@ -24,13 +24,15 @@ function useDetail(t: Task) {
 function CheckButton({ t, size }: { t: Task; size: number }) {
   const s = useStore()
   const done = t.status === 'done'
+  const [pop, setPop] = useState(false)
   return (
     <button
       type="button"
       aria-label={done ? 'Tandai belum selesai' : 'Tandai selesai'}
       aria-pressed={done}
-      onClick={() => s.toggleTask(t.id)}
-      className="mt-2.5 grid flex-none place-items-center rounded-full p-0 text-[12px] font-bold text-bg"
+      onClick={() => { if (!done) setPop(true); s.toggleTask(t.id) }}
+      onAnimationEnd={() => setPop(false)}
+      className={`mt-2.5 grid flex-none place-items-center rounded-full p-0 text-[12px] font-bold text-bg transition-colors duration-(--dur-fast) ${pop ? 'animate-pop' : ''}`}
       style={{ width: size, height: size, border: `1.6px solid ${done ? 'var(--fg3)' : PRIO[t.prio].c}`, background: done ? 'var(--fg3)' : 'transparent' }}
     >
       {done ? '✓' : ''}
@@ -156,6 +158,29 @@ function Reminders({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean 
   )
 }
 
+const URL_RE = /https?:\/\/[^\s<>()]+/g
+
+function NoteLinks({ text }: { text: string }) {
+  const urls = Array.from(new Set((text.match(URL_RE) ?? []).map(u => u.replace(/[.,;:!?)]+$/, ''))))
+  if (!urls.length) return null
+  return (
+    <div className="flex flex-wrap gap-2.5">
+      {urls.map(u => (
+        <a
+          key={u}
+          href={u}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex max-w-full items-center gap-2 rounded-sm border border-line2 bg-bg px-4 py-2 text-[12px] font-medium text-accent no-underline hover:bg-hover"
+        >
+          <span className="truncate">{u.replace(/^https?:\/\//, '')}</span>
+          <span aria-hidden="true" className="flex-none">↗</span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
 function Row({ label, children, top }: { label: string; children: ReactNode; top?: boolean }) {
   return (
     <>
@@ -166,12 +191,12 @@ function Row({ label, children, top }: { label: string; children: ReactNode; top
 }
 
 /** Desktop: 360px panel on the right. Changes save immediately; Simpan only closes. */
-export function DetailPanel({ task }: { task: Task }) {
+export function DetailPanel({ task, floating }: { task: Task; floating?: boolean }) {
   const d = useDetail(task)
   const t = task
   useEscape(d.close)
-  return (
-    <aside aria-label="Detail tugas" className="animate-slide flex w-[360px] flex-none flex-col gap-9 overflow-auto border-l border-line bg-surface px-11 pt-10 pb-12">
+  const panel = (
+    <aside aria-label="Detail tugas" className={`animate-slide flex w-[360px] flex-col ${floating ? 'fixed inset-y-0 right-0 z-[7] max-w-[calc(100vw-48px)] shadow-[0_24px_60px_-20px_rgba(0,0,0,.35)]' : 'flex-none'} gap-9 overflow-auto border-l border-line bg-surface px-11 pt-10 pb-12`}>
       <div className="flex items-center gap-4">
         <span className="text-label flex-1 text-fg3">DETAIL TUGAS</span>
         <button type="button" aria-label="Tutup detail" onClick={d.close} className="size-14 rounded-sm border-0 bg-surface2 text-[14px] text-fg2">✕</button>
@@ -212,16 +237,26 @@ export function DetailPanel({ task }: { task: Task }) {
         {d.proj && d.proj.members.length > 1 && <Row label="PIC"><Pics d={d} /></Row>}
         <Row label="Pengingat" top><Reminders d={d} /></Row>
       </div>
-      <label className="flex flex-col gap-3 text-[13px] text-fg3">
-        Catatan
-        <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={4} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-y rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
-      </label>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-3 text-[13px] text-fg3">
+          Catatan
+          <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={4} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-y rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
+        </label>
+        <NoteLinks text={t.notes} />
+      </div>
       <div className="flex-1" />
       <div className="flex gap-4">
         <button type="button" onClick={d.close} className="h-19 flex-1 rounded-[9px] border-0 bg-fg text-[13px] font-semibold text-bg">Simpan</button>
         <button type="button" onClick={() => d.s.deleteTask(t.id)} className="h-19 rounded-[9px] border border-line2 bg-transparent px-8 text-[13px] font-medium text-high">Hapus</button>
       </div>
     </aside>
+  )
+  if (!floating) return panel
+  return (
+    <>
+      <div aria-hidden="true" className="animate-fade fixed inset-0 z-[6] bg-black/30" onClick={d.close} />
+      {panel}
+    </>
   )
 }
 
@@ -262,7 +297,10 @@ export function DetailSheet({ task }: { task: Task }) {
         <div className="flex flex-col gap-4 border-t border-line px-7 py-6"><span className="text-fg2">Pengingat</span><Reminders d={d} big /></div>
       </div>
       {d.proj && d.proj.members.length > 1 && <div className="flex flex-col gap-4"><span className={lbl}>PIC</span><Pics d={d} big /></div>}
-      <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={3} placeholder="Catatan atau tautan…" aria-label="Catatan" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-6 text-[14px] leading-normal text-fg outline-none" />
+      <div className="flex flex-col gap-3">
+        <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={3} placeholder="Catatan atau tautan…" aria-label="Catatan" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-6 text-[14px] leading-normal text-fg outline-none" />
+        <NoteLinks text={t.notes} />
+      </div>
       <div className="flex gap-4">
         <button type="button" onClick={() => d.s.deleteTask(t.id)} className="h-24 rounded-[12px] border border-line2 bg-transparent px-9 text-[15px] font-medium text-high">Hapus</button>
         <button type="button" onClick={d.close} className="h-24 flex-1 rounded-[12px] border-0 bg-fg text-[15px] font-semibold text-bg">Simpan</button>

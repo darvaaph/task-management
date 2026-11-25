@@ -9,10 +9,11 @@ import { useStore } from '../store'
 function Onboarding({ mobile }: { mobile: boolean }) {
   const s = useStore()
   if (!s.account.onboarding) return null
+  const guides = s.tasks.filter(t => t.guide && t.status !== 'done').length
   const steps = [
-    { done: s.tasks.length > 0, title: 'Catat tugas pertama', desc: mobile ? 'Ketuk tombol + di kanan bawah.' : 'Ketik di kolom di atas, lalu tekan Enter.', cta: null as null | { label: string; on: () => void } },
+    { done: s.tasks.some(t => !t.guide), title: 'Catat tugas pertama', desc: mobile ? 'Ketuk tombol + di kanan bawah.' : 'Ketik di kolom di atas, lalu tekan Enter.', cta: null as null | { label: string; on: () => void } },
     { done: s.projects.length > 0, title: 'Buat proyek', desc: 'Untuk pekerjaan yang punya tenggat, misalnya tugas kelompok.', cta: { label: 'Buat proyek', on: () => s.go('projects') } },
-    { done: s.account.checkedAreas, title: 'Cek area', desc: 'Kuliah, Kantor, dan Pribadi sudah disiapkan. Ubah sesuai kebutuhan.', cta: { label: 'Kelola area', on: () => { s.setAccount({ checkedAreas: true }); s.setUI({ overlay: 'areas' }) } } },
+    { done: s.account.checkedAreas, title: 'Cek area', desc: 'Area yang kamu pilih sudah siap. Tambah atau ubah sesuai kebutuhan.', cta: { label: 'Kelola area', on: () => { s.setAccount({ checkedAreas: true }); s.setUI({ overlay: 'areas' }) } } },
   ]
   return (
     <section aria-label="Selamat datang" className="flex flex-col gap-7 rounded-lg border border-line bg-surface p-9">
@@ -35,6 +36,13 @@ function Onboarding({ mobile }: { mobile: boolean }) {
           {st.cta && !st.done && <button type="button" onClick={st.cta.on} className="h-16 whitespace-nowrap rounded-[8px] border border-line2 bg-transparent px-6 text-[13px] font-medium text-fg">{st.cta.label}</button>}
         </div>
       ))}
+      {s.tasks.some(t => t.guide) && (
+        <div className="flex flex-wrap items-center gap-5 border-t border-line pt-7">
+          <span className="min-w-[180px] flex-1 text-[13px] leading-normal text-fg2">{guides > 0 ? `${guides} tugas panduan menunggu di Inbox. Coba langsung di sana.` : 'Semua tugas panduan sudah dicoba.'}</span>
+          {guides > 0 && <button type="button" onClick={() => s.go('inbox')} className="h-16 whitespace-nowrap rounded-[8px] border border-line2 bg-transparent px-6 text-[13px] font-medium text-fg">Buka Inbox</button>}
+          <button type="button" onClick={s.clearGuides} className="border-0 bg-transparent p-2 text-[13px] font-medium text-fg3">Hapus semua panduan</button>
+        </div>
+      )}
     </section>
   )
 }

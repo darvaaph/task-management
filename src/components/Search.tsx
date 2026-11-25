@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { PRIO } from '../lib/constants'
 import { fmt, rel } from '../lib/dates'
 import { areaOf, byOpen } from '../lib/logic'
 import { useStore } from '../store'
-import { useEscape } from './ui'
+import { searchShortcut } from '../lib/device'
+import { useDialog } from './ui'
 
 const SearchIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
@@ -24,8 +25,9 @@ export function SearchButton({ onClick }: { onClick: () => void }) {
 export function Search({ mobile }: { mobile: boolean }) {
   const s = useStore()
   const [q, setQ] = useState('')
+  const dialogRef = useRef<HTMLDivElement>(null)
   const close = () => s.setUI({ overlay: null })
-  useEscape(close)
+  useDialog(dialogRef, close)
   const term = q.trim().toLowerCase()
   const tm = term ? s.tasks.filter(t => t.title.toLowerCase().includes(term) || t.notes.toLowerCase().includes(term)).sort(byOpen) : []
   const pm = term ? s.projects.filter(p => p.name.toLowerCase().includes(term)) : []
@@ -36,7 +38,7 @@ export function Search({ mobile }: { mobile: boolean }) {
 
   const rowCls = `flex w-full items-center gap-5 rounded-[8px] border-0 px-5 py-3 text-left text-fg ${mobile ? 'min-h-26' : 'min-h-22'}`
   const hint = !term
-    ? mobile ? 'Ketik untuk mencari judul tugas, catatan, atau nama proyek.' : 'Ketik untuk mencari judul tugas, catatan, atau nama proyek. Enter membuka hasil teratas. Tekan ⌘K / Ctrl+K dari mana saja.'
+    ? mobile ? 'Ketik untuk mencari judul tugas, catatan, atau nama proyek.' : `Ketik untuk mencari judul tugas, catatan, atau nama proyek. Enter membuka hasil teratas. Tekan ${searchShortcut} dari mana saja.`
     : !tm.length && !pm.length ? `Tidak ada yang cocok dengan “${q.trim()}”. Coba kata lain.` : null
 
   const results = (
@@ -86,7 +88,7 @@ export function Search({ mobile }: { mobile: boolean }) {
 
   if (mobile) {
     return (
-      <div role="dialog" aria-modal="true" aria-label="Pencarian" className="animate-fade fixed inset-0 z-[12] flex flex-col gap-5 bg-surface px-7 pt-8 pb-10">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Pencarian" className="animate-fade fixed inset-0 z-[12] flex flex-col gap-5 bg-surface px-7 pt-8 pb-10 outline-none">
         <div className="flex items-center gap-4">
           <div className="flex-1">{field}</div>
           <button type="button" onClick={close} className="h-22 border-0 bg-transparent px-3 text-[15px] font-medium text-accent">Batal</button>
@@ -98,7 +100,7 @@ export function Search({ mobile }: { mobile: boolean }) {
   return (
     <>
       <div className="animate-fade fixed inset-0 z-[24] bg-black/25" onClick={close} />
-      <div role="dialog" aria-modal="true" aria-label="Pencarian" className="animate-fade fixed top-[90px] left-1/2 z-[25] flex max-h-[560px] w-[600px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col gap-4 rounded-xl border border-line bg-surface p-6 shadow-[0_24px_60px_-20px_rgba(0,0,0,.35)]">
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Pencarian" className="animate-fade fixed top-[90px] left-1/2 z-[25] flex max-h-[560px] w-[600px] max-w-[calc(100vw-32px)] -translate-x-1/2 flex-col gap-4 rounded-xl border border-line bg-surface p-6 shadow-[0_24px_60px_-20px_rgba(0,0,0,.35)] outline-none">
         {field}
         {results}
       </div>
