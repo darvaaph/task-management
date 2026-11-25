@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { FREE_MEMBER_QUOTA, PEOPLE, PRO_MEMBER_QUOTA } from '../lib/constants'
 import { agoLabel, fmt } from '../lib/dates'
-import { areaOf } from '../lib/logic'
 import type { Project } from '../lib/types'
 import { useStore } from '../store'
+import { LogoMark } from './icons'
 import { ProBadge } from './Pro'
 import { Avatar, Modal, ProgressBar, Sheet } from './ui'
 
@@ -10,6 +11,7 @@ import { Avatar, Modal, ProgressBar, Sheet } from './ui'
 export function ShareProject({ project: P, mobile }: { project: Project; mobile: boolean }) {
   const s = useStore()
   const close = () => s.setUI({ overlay: null })
+  const [preview, setPreview] = useState(false)
 
   const limit = s.isPro ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
   const n = P.members.length
@@ -19,7 +21,8 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
   const acts = s.activity.filter(a => a.p === P.id).slice(0, 8)
   const capColor = full ? 'var(--high)' : 'var(--accent)'
   const planTag = s.isPro ? (s.account.demo ? 'Demo' : 'Pro') : 'Gratis'
-  const inviteMeta = `${P.area ? areaOf(s.areas, P.area).name + ' · ' : ''}${n} anggota · tenggat ${fmt(P.due)}`
+  // The owner's area is private (PRD 5.4): the friend picks one of their own after joining.
+  const inviteMeta = `${n} anggota · tenggat ${fmt(P.due)}`
 
   const copy = () => {
     try {
@@ -96,16 +99,25 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
             )}
           </div>
         )}
-        <button type="button" onClick={() => s.simulateJoin(P.id)} className={`self-start border-0 bg-transparent text-[12.5px] font-medium text-fg2 underline underline-offset-2 hover:text-fg ${mobile ? 'min-h-18 py-2' : 'py-2'}`}>
-          Simulasi: teman membuka tautan
-        </button>
+        {/* No backend yet, so nobody can really open the link: only the demo can fake a friend joining. */}
+        {s.account.demo ? (
+          <button type="button" onClick={() => s.simulateJoin(P.id)} className={`self-start border-0 bg-transparent text-[12.5px] font-medium text-fg2 underline underline-offset-2 hover:text-fg ${mobile ? 'min-h-18 py-2' : 'py-2'}`}>
+            Simulasi: teman membuka tautan
+          </button>
+        ) : (
+          <span className="text-[12.5px] leading-[1.45] text-fg3">Teman bisa bergabung lewat tautan ini setelah sinkronisasi cloud aktif.</span>
+        )}
       </section>
 
       <section className="flex flex-col gap-4">
-        <span className="text-label text-fg3">YANG DILIHAT TEMAN SAAT MEMBUKA TAUTAN</span>
-        <div className="flex flex-col items-center gap-4 rounded-lg border border-line bg-bg p-9 text-center">
+        <button type="button" aria-expanded={preview} onClick={() => setPreview(!preview)} className="flex min-h-22 items-center gap-4 rounded-md border border-line bg-bg px-6 text-left text-[13.5px] font-medium text-fg">
+          <span className="flex-1">Lihat tampilan undangan</span>
+          <span aria-hidden="true" className={`text-[16px] text-fg3 transition-transform duration-(--dur-fast) ${preview ? 'rotate-90' : ''}`}>›</span>
+        </button>
+        {preview && <div className="flex flex-col items-center gap-4 rounded-lg border border-line bg-bg p-9 text-center">
+          <span className="text-label text-fg3">YANG DILIHAT TEMAN</span>
           <div className="flex items-center gap-3.5">
-            <span aria-hidden="true" className="size-8 rounded-xs bg-accent" />
+            <LogoMark size={18} />
             <span className="font-display text-[14px] font-semibold">TaskFlow</span>
           </div>
           <span className="text-[13px] text-fg2">{s.account.name} mengundang Anda ke</span>
@@ -119,7 +131,7 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
           ) : (
             <span className="mt-2 rounded-md bg-high-soft px-7 py-5 text-[13px] font-medium text-high">Proyek ini sudah penuh. Hubungi pemiliknya.</span>
           )}
-        </div>
+        </div>}
       </section>
 
       <section className="flex flex-col gap-3">

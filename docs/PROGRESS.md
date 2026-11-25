@@ -16,7 +16,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Detail tugas: lokasi, status, prioritas, tanggal, mulai, jam, durasi, ulangi, PIC, pengingat, catatan | `components/TaskDetail.tsx` | |
 | Pencarian ⌘K | `components/Search.tsx` | |
 | Kelola proyek (bagian, arsip, hapus 2 langkah) dan Kelola area | `components/Manage.tsx` | |
-| Bagikan proyek (tautan + Salin + Reset, kuota 3/20, keluarkan + Urungkan, pratinjau undangan, riwayat aktivitas Pro) | `components/Share.tsx` | Simulasi, tanpa backend |
+| Bagikan proyek (tautan + Salin + Reset, kuota 3/20, keluarkan + Urungkan, pratinjau undangan yang bisa dibuka-tutup, riwayat aktivitas Pro) | `components/Share.tsx` | Tombol Simulasi hanya di mode demo; akun biasa diberi tahu bahwa bergabung menunggu sinkronisasi cloud |
 | Masuk / Daftar / Lupa kata sandi / Tautan terkirim, Mode Demo, Keluar | `views/AuthView.tsx` | Simulasi, tanpa backend |
 | Layar Pro + semua titik kunci (Timeline, kuota proyek, ulangi, durasi, pengingat, warna aksen, bagikan) | `components/Pro.tsx` | "Beli Pro" hanya simulasi |
 | Profil HP: tema, kelola area, warna aksen, Pro, keluar | `App.tsx` (`ProfileSheet`) | |
@@ -33,7 +33,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Belum dibangun
 
-1. **Backend** (PRD §8): akun sungguhan, sinkronisasi cloud, validasi kuota Gratis/Pro di server, tautan undangan sungguhan, realtime. Saat ini semua data hanya di `localStorage` browser.
+1. **Backend** (rancangan lengkap di `docs/BACKEND.md`; PRD §8, pilihan teknis di PRD §9.1: Firebase + login Google + Xendit + Google Play Billing + Capacitor): akun sungguhan, sinkronisasi cloud, validasi kuota Gratis/Pro di server, tautan undangan sungguhan, realtime. Termasuk alur bergabung: daftar/masuk dari tautan, lalu "Masukkan ke area mana?" dengan area milik anggota sendiri (`project_members.area_id`, PRD §5.4, DESIGN §6.25). Saat ini semua data hanya di `localStorage` browser.
 2. **Pengingat saat aplikasi tertutup**: butuh push dari server atau Local Notifications Capacitor. Selama TaskFlow terbuka, notifikasi sudah jalan.
 3. **Capacitor Android** (PRD §4): paket Android dan Google Play Billing. PWA sudah ada. Saat itu, getaran memakai `@capacitor/haptics` (perlu persetujuan dependency) supaya iOS ikut.
 4. **Overlay Google Calendar** (Pro): belum ada desainnya (DESIGN.md §10).

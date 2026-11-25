@@ -23,7 +23,7 @@ Kalau ada yang tidak tertulis di sini maupun di dokumen di atas, **tanya dulu**.
 | TypeScript | 5.8, `strict`, `noUnusedLocals` | `tsconfig.json` |
 | Tailwind CSS | 4.1 lewat `@tailwindcss/vite` | **tanpa** `tailwind.config.js`; tema ada di CSS |
 
-Tidak ada router, state library, backend, test runner, atau linter. Jangan menambah dependency tanpa persetujuan pemilik proyek.
+Tidak ada router, state library, backend, test runner, atau linter. Backend yang direncanakan (Firebase) dirancang di `docs/BACKEND.md`; ikuti dokumen itu saat mulai membangunnya. Jangan menambah dependency tanpa persetujuan pemilik proyek.
 
 Rencana platform di PRD: Web/PWA lalu dibungkus Capacitor untuk Android. Jangan memakai API yang menghalangi itu (misalnya fitur khusus Node di browser).
 

@@ -311,7 +311,9 @@ Mode Demo membuka semua fitur Pro dengan label DEMO PREVIEW.
 
 ### 6.20 Akun
 
-Satu layar masuk dengan empat keadaan: **Masuk**, **Daftar**, **Lupa kata sandi**, **Tautan terkirim**.
+> **Akan berubah saat backend dibangun (PRD §9.1):** login hanya Google. Layar menjadi "Lanjutkan dengan Google" + "Coba Mode Demo", dengan catatan kecil agar pelajar memakai akun Google pribadi (akun sekolah bisa diblokir admin). Isian email/kata sandi dan Lupa kata sandi dihapus; "Pilih area awal" (6.29) muncul setelah login Google pertama. Pengguna yang punya data lokal ditawari memindahkannya ke akun.
+
+Saat ini (tanpa backend) satu layar masuk dengan empat keadaan: **Masuk**, **Daftar**, **Lupa kata sandi**, **Tautan terkirim**.
 - Setiap isian punya label tertulis (bukan hanya placeholder) dan `autocomplete` yang benar.
 - Error muncul di atas form, satu pesan, berlatar `--high-soft`: email tidak valid, kata sandi kosong, nama kosong, kata sandi < 8 karakter.
 - Daftar menampilkan petunjuk panjang kata sandi yang berubah saat mengetik.
@@ -350,7 +352,11 @@ Kemunculan berikutnya tugas berulang tampil di Bulan dan Minggu sebagai chip/blo
 Tombol "Bagikan" di header detail proyek (desktop dan HP).
 - Tautan undangan + Salin + Reset tautan (tautan lama langsung tidak berlaku).
 - Anggota: kuota "x dari 3" (Gratis) atau "x dari 20" (Pro) dengan bar; pemilik tidak bisa dikeluarkan; mengeluarkan anggota mengembalikan tugasnya ke pemilik, dengan Urungkan.
-- Kuota penuh: pesan + "Lihat Pro" (Gratis). Pratinjau halaman undangan menunjukkan apa yang dilihat teman, termasuk keadaan "Proyek ini sudah penuh".
+- Kuota penuh: pesan + "Lihat Pro" (Gratis).
+- **Pratinjau undangan** (apa yang dilihat teman, termasuk "Proyek ini sudah penuh") tertutup secara bawaan: baris "Lihat tampilan undangan ›" (`aria-expanded`) membukanya di tempat.
+- **Halaman undangan** tidak menampilkan area pemilik (area itu pribadi): isinya logo, "<nama> mengundang Anda ke", nama proyek, "x anggota · tenggat <tanggal>", lalu **Gabung proyek** dan "Belum punya akun? Teman diminta daftar dulu, lalu otomatis masuk ke proyek ini."
+- **Setelah bergabung** (dibangun bersama backend): sheet/modal pendek "Masukkan ke area mana?" berisi chip area milik teman + "Nanti saja" (= Tanpa area). Tidak ada area baru yang dibuat otomatis. Di Kelola proyek, anggota bisa mengganti area ini untuk dirinya sendiri; pemilik mengganti area proyek seperti biasa.
+- **Sebelum backend ada:** tombol "Simulasi: teman membuka tautan" hanya muncul di mode demo. Akun biasa melihat "Teman bisa bergabung lewat tautan ini setelah sinkronisasi cloud aktif." Keduanya dihapus begitu tautan undangan sungguhan berfungsi.
 - Riwayat aktivitas (Pro): tambah tugas, ganti status, selesai, anggota bergabung/dikeluarkan.
 
 ### 6.26 Keadaan kosong dan akun baru
@@ -443,6 +449,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.11 (25 Nov 2026):** Area di proyek bersama bersifat per anggota (tanpa area otomatis), halaman undangan tanpa area pemilik, Simulasi hanya di demo.
 - **0.10 (25 Nov 2026):** Logo "Cincin terbuka" (5.1), favicon, dan ikon aplikasi.
 - **0.9 (25 Nov 2026):** Perangkat dan platform (tablet, sentuh, safe-area, pintasan per platform). Rencana: pilih area awal, tugas panduan, usap baris, gerak/suara/getaran.
 - **0.8 (25 Nov 2026):** Tanggal mulai, pengingat, PIC saat menambah, geser-dan-lepas desktop, jadwal berulang di kalender, alur Bagikan + riwayat aktivitas, keadaan kosong dan sambutan akun baru.

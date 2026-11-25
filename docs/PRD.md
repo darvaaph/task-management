@@ -104,8 +104,10 @@ Tiga opsi arsitektur telah dibandingkan:
 - **Aturan Kuota Proyek Aktif:**
   - Batas **maksimal 5 Project aktif** bagi pengguna **Gratis** **hanya menghitung Project yang dimiliki/dibuat sendiri (`owner_id`)** serta tidak diarsipkan (`is_archived = false`).
   - Pengguna Gratis **bebas bergabung** ke *Shared Project* milik teman tanpa menghabiskan kuota 5 *Project* pribadinya.
+- `[Keputusan Desain 0.11]` **Area di *Shared Project*:** *Area* bersifat pribadi per akun, jadi area pemilik tidak pernah terlihat atau disalin ke akun anggota, dan **tidak ada area yang dibuat otomatis**. Setiap anggota menaruh proyek bersama di salah satu area **miliknya sendiri** (disimpan per anggota di `project_members.area_id`), atau membiarkannya "Tanpa area". Pilihan ini hanya berlaku di akun anggota itu. Area proyek bagi pemilik tetap `projects.area_id`.
 - **Hak Akses Fitur Pro di dalam *Shared Project*:**
   - Jika **pemilik *Project* berstatus Pro**, maka kuota anggota naik menjadi **maksimal 20 anggota**, dan seluruh anggota *Project* tersebut (termasuk teman yang masih akun Gratis) dapat membuka **tab Timeline khusus Project tersebut** serta melihat **Riwayat Aktivitas Proyek** (*siapa menyelesaikan/mengubah tugas apa*).
+  - `[Keputusan Desain 0.11]` Fitur Pro **di dalam tugas proyek** (durasi, ulangi Hari kerja/Bulanan, pengingat ganda) juga mengikuti paket **pemilik proyek**: semua anggota proyek milik pengguna Pro boleh memakainya di proyek itu.
   - Jika **pemilik *Project* berstatus Gratis**, kuota anggota maksimal **3 orang** (termasuk pemilik), dan fitur Timeline/Riwayat Aktivitas di *Project* itu tetap terkunci kecuali pemiliknya upgrade ke Pro.
   - `[Keputusan Desain]` Menu **Timeline Utama** (gabungan lintas seluruh *Project* pribadi & tim) dan fitur Pro pribadi lainnya (*Recurring, Google Calendar Sync, Tema kustom, >5 Project sendiri*) tetap mengikuti status `plan_tier` akun masing-masing pengguna.
 
@@ -168,6 +170,7 @@ flowchart TD
 1. **Bergabung via Link Undangan (`?invite=<token>` atau `/invite/<token>`):**
    - Jika teman belum login saat membuka link, token undangan disimpan sementara hingga proses login/daftar selesai, lalu sistem langsung memvalidasi kapasitas proyek (`< 3` jika pemilik Free, `< 20` jika pemilik Pro) dan mengarahkan teman ke halaman *Project* tersebut.
    - Jika kapasitas penuh, tampilkan pesan jelas beserta informasi bagi pemilik *Project*.
+   - Teman **tidak perlu mengunduh aplikasi**: tautan terbuka di browser, dan akun wajib (daftar atau masuk). Setelah bergabung, teman ditanya sekali "Masukkan ke area mana?" dengan chip area miliknya dan pilihan "Nanti saja" (= Tanpa area); bisa diubah lewat Kelola proyek.
 2. **Pembelian Pro (*Lifetime*):**
    - Pengguna menyentuh fitur Pro terkunci → melihat modal perbandingan manfaat dengan penekanan **"Sekali bayar, aktif selamanya"**.
    - Jika diakses melalui Web/PWA → diarahkan ke *payment gateway* web; jika diakses di dalam aplikasi Android Capacitor → memanggil Google Play Billing.
@@ -213,7 +216,7 @@ flowchart TD
 - **`users`**: `id`, `email`, `display_name`, `avatar_url`, `plan_tier` (`free` | `pro_lifetime`), `pro_source` (`web` | `google_play` | `manual`), `pro_purchased_at`, `theme_accent`, `created_at`
 - **`areas`**: `id`, `user_id`, `name`, `color`, `sort_order`, `created_at` *(dibuat dari pilihan area awal saat pendaftaran, dapat disesuaikan pengguna)*
 - **`projects`**: `id`, `owner_id`, `area_id` (nullable), `title`, `description`, `color`, `start_date`, `due_date`, `is_archived`, `invite_token`, `created_at`
-- **`project_members`**: `project_id`, `user_id`, `role` (`owner` | `member`), `joined_at`
+- **`project_members`**: `project_id`, `user_id`, `role` (`owner` | `member`), `area_id` (nullable, area milik anggota itu sendiri untuk proyek ini; untuk pemilik sama dengan `projects.area_id`), `joined_at`
 - **`project_sections`**: `id`, `project_id`, `title`, `sort_order`
 - **`tasks`**: `id`, `creator_id`, `project_id` (nullable → `null` = Tugas Lepas), `area_id` (nullable → dipakai terutama untuk mengelompokkan Tugas Lepas ke *Area*), `section_id` (nullable), `assignee_id` (nullable), `title`, `notes`, `status` (`todo` | `in_progress` | `done`), `priority` (`high` | `medium` | `low`), `start_date`, `due_date`, `due_time`, `recurrence_rule` (nullable), `completed_at`, `sort_order`, `created_at`
 - **`task_reminders`**: `id`, `task_id`, `user_id`, `offset_minutes` *(dipisah per pengguna agar aturan pengingat di Shared Project dan batas 1 vs. banyak pengingat dapat divalidasi per akun tanpa saling menimpa)*
@@ -228,9 +231,24 @@ flowchart TD
 
 ---
 
-## 9. Hal yang Diserahkan ke Tahap Rencana Implementasi / Builder (*What's Left to the Builder*)
-- Pemilihan *tech stack* spesifik (misalnya framework Web/PWA seperti React/Next.js atau Vite+React + Tailwind CSS, backend seperti Supabase/PostgreSQL atau setara, serta komponen Calendar, Kanban, dan Timeline ringan yang *touch-friendly* dan responsif).
-- Penentuan nominal harga pasti paket **Pro Lifetime** (IDR untuk lokal dan/atau USD untuk global) serta integrasi *payment gateway* Web (misal Midtrans/Xendit atau Lemon Squeezy/Stripe).
-- Perancangan skema SQL migrasi lengkap, fungsi *seed* 3 *Area* bawaan saat user baru mendaftar, RLS policies, *webhook* verifikasi pembayaran Web & Google Play Developer API, serta mekanisme *caching* OAuth token dan jadwal Google Calendar.
+## 9. Keputusan Teknis & Hal yang Diserahkan ke Builder
+
+### 9.1 Keputusan teknis (25 Nov 2026)
+| Bagian | Pilihan | Alasan singkat |
+|---|---|---|
+| Frontend | Vite + React + TypeScript + Tailwind CSS 4 (sudah dibangun) | Satu basis kode untuk web, PWA, dan Android |
+| Backend | **Firebase**: Firestore, Authentication, Cloud Functions, Hosting | Cache offline bawaan Firestore menjaga perilaku offline yang sudah ada; pemilik proyek sudah berpengalaman; tidak dijeda saat sepi |
+| Login | **Google saja** (Firebase Auth). Android memakai login Google native lewat plugin Capacitor, bukan WebView. **Sign in with Apple** ditambahkan bila ada aplikasi iOS native | Tanpa kata sandi; Google memblokir login OAuth di WebView |
+| Aturan Gratis/Pro | Firestore Security Rules + penghitung di dokumen pengguna/proyek yang dijaga Cloud Functions (kuota 5 proyek aktif, 3/20 anggota, batas pengingat, fitur Pro) | Batas wajib divalidasi di server (§3) |
+| Pembayaran web | **Xendit** (akun perorangan), utamakan QRIS dan e-wallet; webhook diverifikasi di Cloud Functions | Metode bayar yang lazim bagi pelajar/mahasiswa Indonesia |
+| Pembayaran Android | **Google Play Billing**, diverifikasi lewat Google Play Developer API di Cloud Functions | Wajib di Play Store |
+| Aplikasi Android | **Capacitor** + Local Notifications | Pengingat tetap berbunyi saat aplikasi tertutup |
+| Biaya | Paket Blaze (bayar sesuai pemakaian, kuota gratis harian) dengan peringatan anggaran di Google Cloud | Cloud Functions membutuhkan Blaze |
+
+Catatan: model data di §8 ditulis dalam bentuk tabel; terjemahannya ke koleksi Firestore, Security Rules, Cloud Functions, dan urutan pengerjaan ada di **`docs/BACKEND.md`**, dengan memperhatikan jumlah pembacaan (biaya Firestore dihitung per dokumen yang dibaca).
+
+### 9.2 Diserahkan ke builder
+- Penentuan nominal harga pasti paket **Pro Lifetime** (IDR untuk lokal dan/atau USD untuk global).
+- Perancangan struktur koleksi Firestore, pembuatan area awal saat pendaftaran, Security Rules, Cloud Functions (kuota, undangan, *webhook* Xendit & Google Play Developer API), serta mekanisme *caching* OAuth token dan jadwal Google Calendar.
 - Penyiapan proyek **Capacitor Android** (`@capacitor/core`, `@capacitor/android`, `@capacitor/local-notifications`, plugin Google Play Billing), ikon/splash screen, dan konfigurasi PWA (`manifest.json` + *service worker* untuk aset & pembacaan *offline* dasar).
 - Desain sistem visual detail (palet warna, tipografi, komponen antarmuka, dan animasi mikro).
