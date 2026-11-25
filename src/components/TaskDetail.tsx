@@ -107,6 +107,30 @@ const RECS: [Recurrence | null, string, boolean][] = [[null, 'Tidak', false], ['
 const REM_TIMED: [string, string][] = [['m10', '10 mnt sebelum'], ['m30', '30 mnt sebelum'], ['h1', '1 jam sebelum'], ['d1', 'H-1, 09:00']]
 const REM_DAY: [string, string][] = [['d0', 'Hari H, 09:00'], ['d1', 'H-1, 09:00'], ['d3', 'H-3, 09:00']]
 
+// Written from the minutes, not the chip list: demo data (and later imports) can hold lengths like 90 min.
+const fmtDur = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} jam${m % 60 ? ` ${m % 60} mnt` : ''}` : `${m} mnt`)
+const durLabel = (t: Task) => (!t.time ? 'Atur jam dulu' : t.dur ? fmtDur(t.dur) : 'Tanpa')
+const recLabel = (t: Task) => RECS.find(([v]) => v === (t.rec ?? null))?.[1] ?? 'Tidak'
+const remLabel = (t: Task) => {
+  if (!t.due) return 'Atur tanggal dulu'
+  const names = remindersOf(t).map(k => [...REM_TIMED, ...REM_DAY].find(([x]) => x === k)?.[1]).filter(Boolean)
+  return names.length ? names.join(', ') : 'Tidak ada'
+}
+
+/** Phone: a setting that shows its current value and opens its chips on tap, so the sheet stays short. */
+function FoldRow({ label, value, open, onToggle, children }: { label: string; value: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <div className="flex flex-col border-t border-line">
+      <button type="button" aria-expanded={open} onClick={onToggle} className="flex min-h-22 items-center gap-4 border-0 bg-transparent py-3 pr-6 pl-7 text-left text-[14px]">
+        <span className="flex-none text-fg2">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-right text-fg">{value}</span>
+        <span aria-hidden="true" className={`flex-none text-[16px] text-fg3 transition-transform duration-(--dur-fast) ${open ? 'rotate-90' : ''}`}>›</span>
+      </button>
+      {open && <div className="px-7 pb-6">{children}</div>}
+    </div>
+  )
+}
+
 /** A chip that, when locked, shows PRO and opens the Pro screen instead. */
 function LockChip({ active, locked, onClick, children, big }: { active: boolean; locked?: boolean; onClick: () => void; children: ReactNode; big?: boolean }) {
   return (
@@ -117,6 +141,8 @@ function LockChip({ active, locked, onClick, children, big }: { active: boolean;
 }
 
 function Duration({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
+  // Length only shows as a time range and a block height, both anchored on the start time.
+  if (!d.t.time) return <span className="text-[13px] text-fg3">Atur jam dulu untuk memasang durasi.</span>
   return (
     <div className="flex flex-wrap gap-2.5">
       {DURS.map(([v, l]) => {
@@ -206,6 +232,13 @@ export function DetailPanel({ task, floating }: { task: Task; floating?: boolean
         <CheckButton t={t} size={22} />
         <textarea value={t.title} onChange={e => d.upd({ title: e.target.value })} rows={2} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[20px] leading-tight font-semibold text-fg outline-none" />
       </div>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-3 text-[13px] text-fg3">
+          Catatan
+          <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={3} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-y rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
+        </label>
+        <NoteLinks text={t.notes} />
+      </div>
       <div className="grid grid-cols-[86px_1fr] items-center gap-x-5 gap-y-7 text-[13px]">
         <Row label="Lokasi" top><Location d={d} /></Row>
         <Row label="Status"><StatusPicker t={t} /></Row>
@@ -238,13 +271,6 @@ export function DetailPanel({ task, floating }: { task: Task; floating?: boolean
         {d.proj && d.proj.members.length > 1 && <Row label="PIC"><Pics d={d} /></Row>}
         <Row label="Pengingat" top><Reminders d={d} /></Row>
       </div>
-      <div className="flex flex-col gap-3">
-        <label className="flex flex-col gap-3 text-[13px] text-fg3">
-          Catatan
-          <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={4} placeholder="Tambahkan catatan atau tempel tautan…" className="resize-y rounded-md border border-line bg-bg px-6 py-5 text-[13px] leading-normal text-fg outline-none" />
-        </label>
-        <NoteLinks text={t.notes} />
-      </div>
       <div className="flex-1" />
       <div className="flex gap-4">
         <button type="button" onClick={d.close} className="h-19 flex-1 rounded-[9px] border-0 bg-fg text-[13px] font-semibold text-bg">Simpan</button>
@@ -266,11 +292,19 @@ export function DetailSheet({ task }: { task: Task }) {
   const d = useDetail(task)
   const t = task
   const lbl = 'text-label text-fg3'
+  const [fold, setFold] = useState<null | 'dur' | 'rec' | 'rem'>(null)
+  const toggle = (k: 'dur' | 'rec' | 'rem') => setFold(f => (f === k ? null : k))
   return (
     <Sheet onClose={d.close} label="Detail tugas">
       <div className="flex items-start gap-5">
         <CheckButton t={t} size={24} />
         <textarea value={t.title} onChange={e => d.upd({ title: e.target.value })} rows={2} aria-label="Judul tugas" className="flex-1 resize-none border-0 bg-transparent p-0 font-display text-[21px] leading-tight font-semibold text-fg outline-none" />
+      </div>
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-4"><span className={lbl}>CATATAN</span>
+          <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={2} placeholder="Catatan atau tautan…" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-6 text-[14px] leading-normal text-fg outline-none" />
+        </label>
+        <NoteLinks text={t.notes} />
       </div>
       <div className="flex flex-col gap-4"><span className={lbl}>LOKASI</span><Location d={d} big /></div>
       <div className="flex flex-col gap-4"><span className={lbl}>STATUS</span><StatusPicker t={t} big /></div>
@@ -293,16 +327,13 @@ export function DetailSheet({ task }: { task: Task }) {
           {t.time && <button type="button" onClick={() => d.upd({ time: null })} className="border-0 bg-transparent p-3 text-[13px] font-medium text-fg3">Hapus</button>}
           <input type="time" value={t.time ?? ''} onChange={e => d.upd({ time: e.target.value || null })} aria-label="Jam tugas" className={`${input} h-18`} />
         </div>
-        <div className="flex flex-col gap-4 border-t border-line px-7 py-6"><span className="text-fg2">Durasi</span><Duration d={d} big /></div>
-        <div className="flex flex-col gap-4 border-t border-line px-7 py-6"><span className="text-fg2">Ulangi</span><Repeat d={d} big /></div>
-        <div className="flex flex-col gap-4 border-t border-line px-7 py-6"><span className="text-fg2">Pengingat</span><Reminders d={d} big /></div>
+        <FoldRow label="Durasi" value={durLabel(t)} open={fold === 'dur'} onToggle={() => toggle('dur')}><Duration d={d} big /></FoldRow>
+        <FoldRow label="Ulangi" value={recLabel(t)} open={fold === 'rec'} onToggle={() => toggle('rec')}><Repeat d={d} big /></FoldRow>
+        <FoldRow label="Pengingat" value={remLabel(t)} open={fold === 'rem'} onToggle={() => toggle('rem')}><Reminders d={d} big /></FoldRow>
       </div>
       {d.proj && d.proj.members.length > 1 && <div className="flex flex-col gap-4"><span className={lbl}>PIC</span><Pics d={d} big /></div>}
-      <div className="flex flex-col gap-3">
-        <textarea value={t.notes} onChange={e => d.upd({ notes: e.target.value })} rows={3} placeholder="Catatan atau tautan…" aria-label="Catatan" className="resize-none rounded-[12px] border border-line bg-bg px-7 py-6 text-[14px] leading-normal text-fg outline-none" />
-        <NoteLinks text={t.notes} />
-      </div>
-      <div className="flex gap-4">
+      {/* Pinned to the sheet's bottom edge (offset by the sheet's own bottom padding) so closing never needs a scroll. */}
+      <div className="sticky bottom-[calc(-1*max(34px,calc(env(safe-area-inset-bottom)+12px)))] z-[1] -mx-10 -mb-[max(34px,calc(env(safe-area-inset-bottom)+12px))] flex gap-4 border-t border-line bg-surface px-10 pt-5 pb-[max(12px,env(safe-area-inset-bottom))]">
         <button type="button" onClick={() => d.s.deleteTask(t.id)} className="h-24 rounded-[12px] border border-line2 bg-transparent px-9 text-[15px] font-medium text-high">Hapus</button>
         <button type="button" onClick={d.close} className="h-24 flex-1 rounded-[12px] border-0 bg-fg text-[15px] font-semibold text-bg">Simpan</button>
       </div>

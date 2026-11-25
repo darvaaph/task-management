@@ -233,6 +233,10 @@ Dipakai untuk: detail tugas, tambah tugas, profil.
 
 Lebar 360 px di kanan, border kiri `--line`, label kiri 86 px dalam grid dua kolom. Jam diisi dengan `<input type="time">` dan bisa dihapus ("Hapus jam"). Tugas tanpa jam tetap sah.
 
+**Urutan isi detail tugas (desktop dan HP):** judul → **Catatan** → lokasi → status → prioritas → tanggal/mulai/jam → durasi, ulangi, pengingat → PIC. Catatan adalah isi tugas, jadi selalu langsung terlihat saat detail dibuka, dan selalu punya label tertulis.
+
+**Di HP**, Durasi, Ulangi, dan Pengingat tampil sebagai baris ringkas (label kiri, nilai sekarang di kanan, `›`, tinggi 44 px, `aria-expanded`). Mengetuk baris membuka chip-nya; hanya satu yang terbuka sekaligus. Hapus dan Simpan menempel di tepi bawah sheet (latar `--surface`, garis atas `--line`) supaya menutup tidak perlu menggulir. Simpan hanya menutup; semua perubahan sudah tersimpan saat dibuat.
+
 ### 6.12 Tambah tugas (composer)
 
 Aturan: **tujuan dan tanggal bawaan mengikuti halaman, tapi selalu terlihat dan bisa diganti sebelum disimpan.**
@@ -303,7 +307,7 @@ Mode Demo membuka semua fitur Pro dengan label DEMO PREVIEW.
 - **Ulangi:** Tidak · Harian · Mingguan · Hari kerja · Bulanan. Menyalakan pengulangan pada tugas tanpa tanggal mengisi tanggalnya dengan hari ini.
 - **Menyelesaikan tugas berulang** tidak mencoretnya. Tanggalnya maju ke kemunculan berikutnya yang belum lewat (siklus yang terlewat tidak menumpuk), lalu toast "Selesai. Diulang ke Senin, 30 Nov" dengan Urungkan.
 - Tugas berulang ditandai "↻ Mingguan" di baris meta dan **tidak dihitung** dalam progres proyek.
-- **Durasi:** Tanpa · 15 mnt · 30 mnt · 1 jam · 2 jam · 3 jam. Baris tugas menampilkan rentang jam ("10:00–12:00"). Di Mingguan tinggi blok = durasi (tanpa durasi dianggap 1 jam, minimal 22 px).
+- **Durasi:** Tanpa · 15 mnt · 30 mnt · 1 jam · 2 jam · 3 jam. Hanya bisa diatur bila tugas punya jam; tanpa jam tampil "Atur jam dulu untuk memasang durasi." (ringkasan HP: "Atur jam dulu"). Baris tugas menampilkan rentang jam ("10:00–12:00"). Di Mingguan tinggi blok = durasi (tanpa durasi dianggap 1 jam, minimal 22 px).
 
 ### 6.20 Akun
 

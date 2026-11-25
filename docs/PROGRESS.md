@@ -28,6 +28,7 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 | Logo "Cincin terbuka": `LogoMark` di sidebar dan halaman Masuk, favicon SVG/PNG, apple-touch-icon, ikon 192/512 + maskable untuk PWA | `components/icons.tsx`, `public/`, `index.html` | DESIGN §5.1 |
 | PWA: manifest, meta iOS/Android, service worker offline (shell + aset hasil build + font), hanya aktif di build produksi | `public/manifest.webmanifest`, `public/sw.js`, `main.tsx`, `index.html` | DESIGN §6.28; uji dengan `npm run build` lalu `npm run preview` |
 | Notifikasi pengingat selama aplikasi terbuka: jadwal dari `rems`, izin lewat tombol, klik membuka tugas, tidak dobel setelah muat ulang | `components/Reminders.tsx`, `lib/logic.ts` (`reminderTimes`), `public/sw.js`, `store.tsx` (`markNotified`) | DESIGN §6.22 |
+| Detail tugas lebih pendek di HP: catatan di bawah judul, Durasi/Ulangi/Pengingat jadi baris ringkas, Hapus/Simpan menempel di bawah (isi sheet 1.288 → 983 px) | `components/TaskDetail.tsx` | DESIGN §6.11 |
 | Gerak mikro: centang memantul, warna centang/judul berganti halus, progress bar mengikuti token gerak (mati saat reduced motion) | `TaskRow.tsx`, `TaskDetail.tsx`, `ui.tsx`, `index.css` | DESIGN §6.32 |
 
 ## Belum dibangun
@@ -45,5 +46,5 @@ Terakhir diperbarui: 25 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
-- **25 Nov 2026** — Pass 7: dukungan perangkat (tablet, sentuh, safe-area, pintasan per platform). Pass 8: gerak mikro centang dan progres. Pass 9: pilih area awal saat Daftar. Pass 10: tugas panduan. Pass 11: usap baris tugas; sheet profil kini tertutup saat Keluar. Pass 12: suara dan getaran. Pass 13: logo dan ikon aplikasi. Pass 14: PWA dan mode offline. Pass 15: notifikasi pengingat. Keputusan untuk area awal, tugas panduan, usap, dan gerak/suara/getaran dicatat di DESIGN 0.9 dan PRD.
+- **25 Nov 2026** — Pass 7: dukungan perangkat (tablet, sentuh, safe-area, pintasan per platform). Pass 8: gerak mikro centang dan progres. Pass 9: pilih area awal saat Daftar. Pass 10: tugas panduan. Pass 11: usap baris tugas; sheet profil kini tertutup saat Keluar. Pass 12: suara dan getaran. Pass 13: logo dan ikon aplikasi. Pass 14: PWA dan mode offline. Pass 15: notifikasi pengingat. Pass 16: detail tugas HP diringkas, catatan dipindah ke atas. Keputusan untuk area awal, tugas panduan, usap, dan gerak/suara/getaran dicatat di DESIGN 0.9 dan PRD.
 - **25 Nov 2026** — Pass 1: inti (shell, Hari Ini, Inbox, Proyek, detail, composer, tema). Pass 2: Jadwal. Pass 3: pencarian, Kelola proyek/area. Pass 4: akun, Pro, titik kunci, durasi/ulangi/pengingat, sambutan akun baru. Pass 5: Bagikan proyek & riwayat aktivitas. Pass 6: focus trap + tumpukan dialog (`Modal`/`Sheet`/`Search`), tanggal bebas di Proyek baru, tautan dapat diklik di catatan, filter area di Timeline, Urungkan untuk geser semua terlambat.
