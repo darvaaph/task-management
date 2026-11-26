@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "emulators": "firebase emulators:start --only auth,firestore,functions --project demo-taskflow",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-taskflow \"node --test tests/rules/*.test.mjs\""
+    "test:rules": "firebase emulators:exec --only firestore --project demo-taskflow \"node --test tests/rules/*.test.mjs\"",
+    "test:functions": "firebase emulators:exec --only auth,firestore,functions --project demo-taskflow \"node --test tests/functions/*.test.mjs\""
   },
   "dependencies": {
     "firebase": "^13.4.0",
