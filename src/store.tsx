@@ -1,208 +1,53 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { DocumentData, FieldValue, QueryDocumentSnapshot, UpdateData, WriteBatch } from 'firebase/firestore'
+import type { DocumentData, UpdateData, WriteBatch } from 'firebase/firestore'
 import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS, FREE_MEMBER_QUOTA, FREE_PROJECT_QUOTA, MEMBER_POOL, PEOPLE, PRO_MEMBER_QUOTA, STATUS } from './lib/constants'
 import { addDays, diffDays, fmtDay, today } from './lib/dates'
 import { inToday, isOverdue, nextActiveOccurrence, parseDest, type Dest } from './lib/logic'
 import { guideTasks, seed } from './lib/seed'
 import { feedback } from './lib/feedback'
-import type { Activity, Area, Data, ISODate, Priority, Project, Recurrence, Status, Task } from './lib/types'
+import {
+  BATCH_LIMIT,
+  authErrMsg,
+  docToTask,
+  docsToAreas,
+  safeDocId,
+  sortCloudTasks,
+  taskPatchToCloud,
+  taskToCloudDoc,
+} from './lib/cloudCodec'
+import {
+  ACCOUNT0,
+  EMPTY_DATA,
+  STORAGE_KEY,
+  UI0,
+  hasRedirectFlag,
+  loadLocalStore,
+  normalizeByUid,
+  normalizeData,
+  saveLocalStore,
+  setRedirectFlag,
+  type Accent,
+  type Account,
+  type LocalMigration,
+  type ProCtx,
+  type StoredState,
+  type Theme,
+  type UI,
+  type View,
+} from './lib/localStore'
+import { WriteQueue } from './lib/writeQueue'
+import type { Activity, Area, Data, ISODate, Priority, Project, Task } from './lib/types'
+
+export type { Accent, Account, LocalMigration, ProCtx, Theme, UI, View }
 
 type FirebaseMod = typeof import('./lib/firebase')
 
 let fbPromise: Promise<FirebaseMod> | null = null
 const loadFirebase = (): Promise<FirebaseMod> => (fbPromise ??= import('./lib/firebase'))
 
-const REDIRECT_FLAG = 'taskflow-auth-redirect'
-const hasRedirectFlag = () => {
-  try { return sessionStorage.getItem(REDIRECT_FLAG) === '1' } catch { return false }
-}
-const setRedirectFlag = (on: boolean) => {
-  try {
-    if (on) sessionStorage.setItem(REDIRECT_FLAG, '1')
-    else sessionStorage.removeItem(REDIRECT_FLAG)
-  } catch { /* ignore private mode */ }
-}
-
-const KEY = 'taskflow-v1'
-
-export type View = 'today' | 'inbox' | 'jadwal' | 'projects' | 'project'
-export type Theme = 'light' | 'dark'
-export type Accent = 'indigo' | 'teal' | 'tangerine' | 'forest'
-/** Which locked feature opened the Pro screen; highlights its row and explains it. */
-export type ProCtx = 'general' | 'tl' | 'rec' | 'dur' | 'proj' | 'accent' | 'rem' | 'share'
-
-export interface Account {
-  loggedIn: boolean
-  /** Demo mode opens every Pro feature, labelled DEMO PREVIEW. */
-  demo: boolean
-  /** Signed-in Firebase UID, used to isolate Phase-1 local project data per user on reload. */
-  uid?: string
-  name: string
-  plan: 'free' | 'pro'
-  accent: Accent
-  /** New accounts show a welcome card until skipped. */
-  onboarding: boolean
-  checkedAreas: boolean
-  /** Soft tick when a task is completed. Off by default. */
-  sound?: boolean
-  /** Short vibration on completion and swipe threshold (Android only on the web). Off by default. */
-  haptics?: boolean
-  /** Reminders already shown, as "task:due:key", so a reload never shows one twice. */
-  notified?: string[]
-}
-
-export interface LocalMigration {
-  areas: Area[]
-  tasks: Task[]
-}
-
-const ACCOUNT0: Account = { loggedIn: false, demo: false, name: 'Anda', plan: 'free', accent: 'indigo', onboarding: false, checkedAreas: false }
-const EMPTY_DATA: Data = { tasks: [], projects: [], areas: [], activity: [] }
-const BATCH_LIMIT = 500
-const TEXT_DEBOUNCE_MS = 600
-
-interface PendingTaskWrite {
-  kind: 'task'
-  uid: string
-  id: string
-  patch: Partial<Task>
-  timer: number
-}
-
-interface PendingAreaWrite {
-  kind: 'area'
-  uid: string
-  id: string
-  patch: Partial<Area>
-  timer: number
-}
-
-type PendingWrite = PendingTaskWrite | PendingAreaWrite
-
-const safeDocId = (raw: string, fallback: string) =>
-  raw.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || fallback
-
-interface StoredState {
-  data?: Data
-  byUid?: Record<string, Data>
-  theme?: Theme
-  account?: Partial<Account>
-  seeded?: boolean
-  migrated?: boolean
-  /** Unmigrated pre-cloud local data, stashed when "Coba Mode Demo" replaced the root slot with sample data. */
-  legacy?: Data
-}
-
-/** Heuristic for pre-1E browsers that stored untouched seed() data before loggedIn was ever true. */
-function isUntouchedSeed(saved: StoredState): boolean {
-  if (saved.seeded === true) return true
-  if (saved.account?.loggedIn) return false
-  const tasks = saved.data?.tasks ?? []
-  const projects = saved.data?.projects ?? []
-  return (
-    tasks.length === 20
-    && tasks.some(t => t.id === 't1' && t.title === 'Kirim revisi bab 2')
-    && projects.some(p => p.id === 'uas' && p.name === 'Tugas Akhir UAS')
-  )
-}
-
-function normalizeData(d?: Partial<Data>): Data {
-  return {
-    tasks: Array.isArray(d?.tasks) ? d.tasks : [],
-    projects: Array.isArray(d?.projects) ? d.projects : [],
-    areas: Array.isArray(d?.areas) ? d.areas : [],
-    activity: Array.isArray(d?.activity) ? d.activity : [],
-  }
-}
-
-function extractMigration(saved: StoredState): LocalMigration | null {
-  if (!saved || saved.migrated === true) return null
-  // A stashed copy always wins: the root slot holds demo data once the stash exists.
-  const stashed = Boolean(saved.legacy)
-  const src = stashed ? saved.legacy : saved.data
-  if (!src) return null
-  // Root `saved.data` holds pre-backend local data (separate from per-account `byUid`),
-  // so returning Google users also receive the migration offer until migrated or skipped.
-  if (!stashed && (saved.account?.demo === true || isUntouchedSeed(saved))) return null
-  // Legacy 1D/1E storage stored a signed-in user's cleared local data directly in `saved.data` without `byUid`.
-  if (!stashed && !saved.byUid && saved.account?.uid) return null
-  const areas = Array.isArray(src.areas)
-    ? src.areas.filter(a => a && typeof a.id === 'string' && typeof a.name === 'string' && a.name.trim())
-    : []
-  const tasks = Array.isArray(src.tasks)
-    ? src.tasks.filter(t => t && typeof t.id === 'string' && !t.project && !t.guide && typeof t.title === 'string' && t.title.trim())
-    : []
-  if (!areas.length && !tasks.length) return null
-  return { areas, tasks }
-}
-
-export interface UI {
-  view: View
-  projectId: string | null
-  mode: 'list' | 'board' | 'timeline'
-  taskId: string | null
-  inboxArea: string
-  projArea: string
-  archives: boolean
-  banner: boolean
-  cal: 'month' | 'week' | 'timeline'
-  /** Selected day, shared by Bulan and Minggu. */
-  calDay: ISODate
-  overlay: null | 'search' | 'project' | 'areas' | 'share'
-  pro: ProCtx | null
-}
-
 interface Toast {
   msg: string
   undo: (() => void) | null
-}
-
-const UI0 = (): UI => ({ view: 'today', projectId: null, mode: 'list', taskId: null, inboxArea: 'all', projArea: 'all', archives: false, banner: true, cal: 'month', calDay: today(), overlay: null, pro: null })
-
-function load(): {
-  data: Data
-  rootData: Data
-  byUid: Record<string, Data>
-  theme: Theme
-  account: Account
-  seeded: boolean
-  migrated: boolean
-  legacy: Data | null
-  migration: LocalMigration | null
-} {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY) || 'null') as StoredState | null
-    if (s?.data?.tasks) {
-      const rootData = normalizeData(s.data)
-      const account: Account = { ...ACCOUNT0, ...s.account }
-      const byUid: Record<string, Data> = {}
-      if (s.byUid && typeof s.byUid === 'object') {
-        for (const [k, v] of Object.entries(s.byUid)) byUid[k] = normalizeData(v)
-      } else if (account.uid && !account.demo) {
-        // Lift pre-P1 single-slot local projects into this user's per-uid bucket.
-        byUid[account.uid] = rootData
-      }
-      const activeData = account.loggedIn && !account.demo && account.uid
-        ? (byUid[account.uid] ?? EMPTY_DATA)
-        : rootData
-      return {
-        data: activeData,
-        rootData,
-        byUid,
-        theme: s.theme === 'dark' ? 'dark' : 'light',
-        account,
-        seeded: isUntouchedSeed(s),
-        migrated: s.migrated === true,
-        legacy: s.legacy && s.migrated !== true ? normalizeData(s.legacy) : null,
-        migration: extractMigration(s),
-      }
-    }
-  } catch {
-    /* storage unavailable or corrupt: start from demo data */
-  }
-  const dark = typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
-  const demoSeed = seed()
-  return { data: demoSeed, rootData: demoSeed, byUid: {}, theme: dark ? 'dark' : 'light', account: ACCOUNT0, seeded: true, migrated: false, legacy: null, migration: null }
 }
 
 const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
@@ -211,119 +56,8 @@ const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
 const statusActivity = (actor: string, title: string, status: Task['status']) =>
   status === 'done' ? `${actor} menyelesaikan "${title}"` : `${actor} memindah "${title}" ke ${STATUS[status]}`
 
-const VALID_STATUS: Status[] = ['todo', 'in_progress', 'done']
-const VALID_PRIO: Priority[] = ['high', 'med', 'low']
-const VALID_REC: Recurrence[] = ['daily', 'weekly', 'weekdays', 'monthly']
-const VALID_REMS = ['m10', 'm30', 'h1', 'd0', 'd1', 'd3']
-
-const authErrMsg = (err: unknown) => {
-  const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
-  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'Masuk dibatalkan.'
-  if (code === 'auth/network-request-failed') return 'Tidak bisa terhubung ke Google. Periksa koneksi internet lalu coba lagi.'
-  return 'Gagal masuk dengan Google. Coba lagi.'
-}
-
-function docToTask(snap: QueryDocumentSnapshot): { task: Task; createdAtMs: number | null } {
-  const d = snap.data()
-  const rawCreated = d.createdAt
-  const createdAtMs = rawCreated && typeof rawCreated.toMillis === 'function' ? rawCreated.toMillis() : null
-  const task: Task = {
-    id: snap.id,
-    title: typeof d.title === 'string' ? d.title : '',
-    project: null,
-    area: typeof d.area === 'string' ? d.area : null,
-    section: typeof d.section === 'string' ? d.section : null,
-    assignee: typeof d.assignee === 'string' ? d.assignee : null,
-    status: VALID_STATUS.includes(d.status as Status) ? (d.status as Status) : 'todo',
-    prio: VALID_PRIO.includes(d.prio as Priority) ? (d.prio as Priority) : 'med',
-    start: typeof d.start === 'string' ? d.start : null,
-    due: typeof d.due === 'string' ? d.due : null,
-    time: typeof d.time === 'string' ? d.time : null,
-    notes: typeof d.notes === 'string' ? d.notes : '',
-    rec: VALID_REC.includes(d.rec as Recurrence) ? (d.rec as Recurrence) : null,
-    dur: typeof d.dur === 'number' ? d.dur : null,
-    ...(Array.isArray(d.rems) ? { rems: d.rems.filter((x): x is string => typeof x === 'string') } : {}),
-    ...(d.guide === true ? { guide: true } : {}),
-  }
-  return { task, createdAtMs }
-}
-
-/** Build a Firestore-rules-compliant payload for creating/restoring a loose task document. */
-function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean, serverTs: () => FieldValue): Record<string, unknown> {
-  const title = t.title.trim().slice(0, 300) || 'Tanpa judul'
-  const dur = pro && typeof t.dur === 'number' && t.dur > 0 ? Math.min(1440, Math.round(t.dur)) : null
-  const rec = t.rec && (pro || t.rec === 'daily' || t.rec === 'weekly') ? t.rec : null
-  const payload: Record<string, unknown> = {
-    title,
-    project: null,
-    area: t.area ?? null,
-    section: null,
-    assignee: null,
-    status: t.status,
-    prio: t.prio,
-    start: t.start ?? null,
-    due: t.due ?? null,
-    time: t.time ?? null,
-    dur,
-    rec,
-    notes: (t.notes ?? '').slice(0, 10000),
-    createdBy: ownerUid,
-    createdAt: serverTs(),
-    updatedAt: serverTs(),
-    completedAt: t.status === 'done' ? serverTs() : null,
-  }
-  if (t.rems !== undefined) {
-    payload.rems = t.rems.filter(k => VALID_REMS.includes(k)).slice(0, pro ? 6 : 1)
-  }
-  if (t.guide === true) {
-    payload.guide = true
-  }
-  return payload
-}
-
-/** Map a partial Task update to Firestore fields; returns null when nothing valid should be sent yet. */
-function taskPatchToCloud(patch: Partial<Task>, serverTs: () => FieldValue): UpdateData<DocumentData> | null {
-  const out: UpdateData<DocumentData> = {}
-  if (patch.title !== undefined) {
-    const trimmed = patch.title.trim().slice(0, 300)
-    // Skip blank intermediate edits while user is clearing/retyping the title input.
-    if (trimmed) out.title = trimmed
-  }
-  if (patch.area !== undefined) out.area = patch.area
-  if (patch.section !== undefined) out.section = patch.section
-  if (patch.assignee !== undefined) out.assignee = patch.assignee
-  if (patch.status !== undefined) {
-    out.status = patch.status
-    out.completedAt = patch.status === 'done' ? serverTs() : null
-  }
-  if (patch.prio !== undefined) out.prio = patch.prio
-  if (patch.start !== undefined) out.start = patch.start
-  if (patch.due !== undefined) out.due = patch.due
-  if (patch.time !== undefined) out.time = patch.time
-  if (patch.dur !== undefined) out.dur = patch.dur
-  if (patch.rec !== undefined) out.rec = patch.rec
-  if (patch.notes !== undefined) out.notes = patch.notes.slice(0, 10000)
-  if (patch.rems !== undefined) out.rems = patch.rems.filter(k => VALID_REMS.includes(k))
-  if (patch.guide !== undefined) out.guide = patch.guide
-  if (!Object.keys(out).length) return null
-  out.updatedAt = serverTs()
-  return out
-}
-
-function sortCloudTasks(items: { task: Task; createdAtMs: number | null }[]): Task[] {
-  return [...items]
-    .sort((a, b) => {
-      // Pending local writes (null serverTimestamp while offline/unacked) stay at the top, newest id first.
-      if (a.createdAtMs == null && b.createdAtMs == null) return b.task.id.localeCompare(a.task.id)
-      if (a.createdAtMs == null) return -1
-      if (b.createdAtMs == null) return 1
-      return b.createdAtMs - a.createdAtMs || a.task.id.localeCompare(b.task.id)
-    })
-    .map(x => x.task)
-}
-
 function useStoreValue() {
-  const initial = useMemo(load, [])
+  const initial = useMemo(loadLocalStore, [])
   // Local store: used in Demo/signed-out mode, and holds Phase-1 local projects, project tasks, and activity when signed in.
   const [localData, setLocalData] = useState<Data>(initial.data)
   const [cloudAreas, setCloudAreas] = useState<Area[]>([])
@@ -356,7 +90,7 @@ function useStoreValue() {
   const migratedRef = useRef(initial.migrated)
   const legacyRef = useRef<Data | null>(initial.legacy)
   const migratingRef = useRef(false)
-  const pendingWritesRef = useRef<Map<string, PendingWrite>>(new Map())
+  const writeQueueRef = useRef(new WriteQueue())
 
   const cloudActive = Boolean(uid && account.loggedIn && !account.demo)
   const cloudUidRef = useRef<string | null>(null)
@@ -390,25 +124,21 @@ function useStoreValue() {
   accountRef.current = account
 
   const persistLocal = useCallback((nextLocal: Data, nextTheme: Theme, nextAccount: Account) => {
-    try {
-      // Store signed-in users' Phase-1 local projects per uid so signOut or switching accounts never erases them.
-      if (nextAccount.loggedIn && !nextAccount.demo && nextAccount.uid) {
-        byUidRef.current = { ...byUidRef.current, [nextAccount.uid]: nextLocal }
-      } else if (nextAccount.demo) {
-        rootDataRef.current = nextLocal
-      }
-      localStorage.setItem(KEY, JSON.stringify({
-        data: rootDataRef.current,
-        byUid: byUidRef.current,
-        theme: nextTheme,
-        account: nextAccount,
-        ...(seededRef.current ? { seeded: true } : {}),
-        ...(migratedRef.current ? { migrated: true } : {}),
-        ...(legacyRef.current ? { legacy: legacyRef.current } : {}),
-      }))
-    } catch {
-      /* private mode: keep working in memory */
+    // Store signed-in users' Phase-1 local projects per uid so signOut or switching accounts never erases them.
+    if (nextAccount.loggedIn && !nextAccount.demo && nextAccount.uid) {
+      byUidRef.current = { ...byUidRef.current, [nextAccount.uid]: nextLocal }
+    } else if (nextAccount.demo) {
+      rootDataRef.current = nextLocal
     }
+    saveLocalStore({
+      rootData: rootDataRef.current,
+      byUid: byUidRef.current,
+      theme: nextTheme,
+      account: nextAccount,
+      seeded: seededRef.current,
+      migrated: migratedRef.current,
+      legacy: legacyRef.current,
+    })
   }, [])
 
   useEffect(() => {
@@ -421,13 +151,10 @@ function useStoreValue() {
   // never overwrites it later with a stale one.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key !== KEY || !e.newValue) return
+      if (e.key !== STORAGE_KEY || !e.newValue) return
       try {
         const saved = JSON.parse(e.newValue) as StoredState
-        const byUid: Record<string, Data> = {}
-        if (saved.byUid && typeof saved.byUid === 'object') {
-          for (const [k, v] of Object.entries(saved.byUid)) byUid[k] = normalizeData(v)
-        }
+        const byUid = normalizeByUid(saved.byUid)
         byUidRef.current = byUid
         rootDataRef.current = normalizeData(saved.data)
         legacyRef.current = saved.legacy && saved.migrated !== true ? normalizeData(saved.legacy) : null
@@ -565,22 +292,9 @@ function useStoreValue() {
 
                 // Restore this user's own per-uid local projects without leaking demo seed() or another user's projects.
                 const userLocal = byUidRef.current[fbUser.uid] ?? EMPTY_DATA
-                const orders = new Map<string, number>()
-                const initialAreas = areasSnap.docs
-                  .map(d => {
-                    const x = d.data()
-                    const order = typeof x.order === 'number' ? x.order : 999
-                    orders.set(d.id, order)
-                    return {
-                      id: d.id,
-                      name: typeof x.name === 'string' ? x.name : d.id,
-                      color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
-                      order,
-                    }
-                  })
-                  .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-                cloudAreaOrdersRef.current = orders
-                setCloudAreas(initialAreas.map(({ id, name: n, color }) => ({ id, name: n, color })))
+                const parsed = docsToAreas(areasSnap)
+                cloudAreaOrdersRef.current = parsed.orders
+                setCloudAreas(parsed.areas)
                 setLocalData(userLocal)
                 setAccountState(a => ({
                   ...a,
@@ -640,22 +354,9 @@ function useStoreValue() {
     if (!cloudActive || !uid || !fb) return
 
     const unsubAreas = fb.onSnapshot(fb.collection(fb.db, 'users', uid, 'areas'), snap => {
-      const orders = new Map<string, number>()
-      const rows = snap.docs
-        .map(d => {
-          const x = d.data()
-          const order = typeof x.order === 'number' ? x.order : 999
-          orders.set(d.id, order)
-          return {
-            id: d.id,
-            name: typeof x.name === 'string' ? x.name : d.id,
-            color: typeof x.color === 'string' ? x.color : AREA_COLORS[0],
-            order,
-          }
-        })
-        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-      cloudAreaOrdersRef.current = orders
-      setCloudAreas(rows.map(({ id, name, color }) => ({ id, name, color })))
+      const parsed = docsToAreas(snap)
+      cloudAreaOrdersRef.current = parsed.orders
+      setCloudAreas(parsed.areas)
     })
 
     const unsubTasks = fb.onSnapshot(fb.collection(fb.db, 'users', uid, 'tasks'), snap => {
@@ -704,19 +405,15 @@ function useStoreValue() {
   }, [])
 
   const cancelPendingWrite = useCallback((key: string) => {
-    const entry = pendingWritesRef.current.get(key)
+    const entry = writeQueueRef.current.take(key)
     if (!entry) return
-    window.clearTimeout(entry.timer)
-    pendingWritesRef.current.delete(key)
     if (entry.kind === 'task') clearDraftTask(entry.id)
     else clearDraftArea(entry.id)
   }, [clearDraftArea, clearDraftTask])
 
   const flushWriteKey = useCallback((key: string) => {
-    const entry = pendingWritesRef.current.get(key)
+    const entry = writeQueueRef.current.take(key)
     if (!entry) return
-    window.clearTimeout(entry.timer)
-    pendingWritesRef.current.delete(key)
     const fb = fbRef.current
     if (!fb) {
       if (entry.kind === 'task') clearDraftTask(entry.id)
@@ -748,8 +445,7 @@ function useStoreValue() {
   }, [clearDraftArea, clearDraftTask, runCloud])
 
   const flushWrites = useCallback(() => {
-    const keys = Array.from(pendingWritesRef.current.keys())
-    for (const key of keys) flushWriteKey(key)
+    for (const key of writeQueueRef.current.keys()) flushWriteKey(key)
   }, [flushWriteKey])
 
   // Flush pending debounced edits if the user switches tabs, backgrounds the app, or closes the page.
@@ -816,8 +512,8 @@ function useStoreValue() {
 
       if (hasImmediate) {
         // Merge any queued text edit into the immediate write so we do not send two separate writes.
-        const pending = pendingWritesRef.current.get(key)
-        const combined = pending ? { ...pending.patch, ...patch } : patch
+        const pending = writeQueueRef.current.get(key)
+        const combined = pending && pending.kind === 'task' ? { ...pending.patch, ...patch } : patch
         if (pending) cancelPendingWrite(key)
         const cloudPatch = taskPatchToCloud(combined, fb.serverTimestamp)
         if (cloudPatch) {
@@ -828,11 +524,7 @@ function useStoreValue() {
 
       if (hasText) {
         setDraftTasks(prev => ({ ...prev, [id]: { ...prev[id], ...textPatch } }))
-        const existing = pendingWritesRef.current.get(key)
-        if (existing) window.clearTimeout(existing.timer)
-        const merged = existing ? { ...existing.patch, ...textPatch } : textPatch
-        const t = window.setTimeout(() => flushWriteKey(key), TEXT_DEBOUNCE_MS)
-        pendingWritesRef.current.set(key, { kind: 'task', uid: curUid, id, patch: merged, timer: t })
+        writeQueueRef.current.queueTask(key, curUid, id, textPatch, () => flushWriteKey(key))
       }
       return
     }
@@ -1148,8 +840,8 @@ function useStoreValue() {
     if (curUid && fb) {
       const key = `area:${id}`
       if (patch.color !== undefined) {
-        const pending = pendingWritesRef.current.get(key)
-        const combined = pending ? { ...pending.patch, ...patch } : patch
+        const pending = writeQueueRef.current.get(key)
+        const combined = pending && pending.kind === 'area' ? { ...pending.patch, ...patch } : patch
         if (pending) cancelPendingWrite(key)
         const cloudPatch: UpdateData<DocumentData> = { color: patch.color }
         if (combined.name !== undefined) {
@@ -1166,11 +858,7 @@ function useStoreValue() {
       }
       if (patch.name !== undefined) {
         setDraftAreas(prev => ({ ...prev, [id]: { ...prev[id], name: patch.name } }))
-        const existing = pendingWritesRef.current.get(key)
-        if (existing) window.clearTimeout(existing.timer)
-        const merged = existing ? { ...existing.patch, name: patch.name } : { name: patch.name }
-        const t = window.setTimeout(() => flushWriteKey(key), TEXT_DEBOUNCE_MS)
-        pendingWritesRef.current.set(key, { kind: 'area', uid: curUid, id, patch: merged, timer: t })
+        writeQueueRef.current.queueArea(key, curUid, id, { name: patch.name }, () => flushWriteKey(key))
       }
       return
     }
