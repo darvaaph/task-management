@@ -152,4 +152,4 @@ Jangan pakai nilai Tailwind "biasa" (`p-4` ≠ 16px di sini). Ukuran yang tidak 
 
 Lihat `docs/PROGRESS.md`. Perbarui file itu setiap selesai satu bagian pekerjaan.
 
-Pekerjaan backend yang sedang berjalan: `docs/HANDOFF-FASE1.md` (tugas, batasan, definisi selesai) dan `docs/BACKEND.md` (rancangan). Agent Gemini membaca `GEMINI.md`, yang menunjuk ke file ini.
+Pekerjaan backend yang sedang berjalan: `docs/HANDOFF-FASE2.md` (tugas, batasan, definisi selesai) dan `docs/BACKEND.md` (rancangan). Agent Gemini membaca `GEMINI.md`, yang menunjuk ke file ini.

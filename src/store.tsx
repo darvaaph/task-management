@@ -89,6 +89,8 @@ interface StoredState {
   account?: Partial<Account>
   seeded?: boolean
   migrated?: boolean
+  /** Unmigrated pre-cloud local data, stashed when "Coba Mode Demo" replaced the root slot with sample data. */
+  legacy?: Data
 }
 
 /** Heuristic for pre-1E browsers that stored untouched seed() data before loggedIn was ever true. */
@@ -114,16 +116,21 @@ function normalizeData(d?: Partial<Data>): Data {
 }
 
 function extractMigration(saved: StoredState): LocalMigration | null {
+  if (!saved || saved.migrated === true) return null
+  // A stashed copy always wins: the root slot holds demo data once the stash exists.
+  const stashed = Boolean(saved.legacy)
+  const src = stashed ? saved.legacy : saved.data
+  if (!src) return null
   // Root `saved.data` holds pre-backend local data (separate from per-account `byUid`),
   // so returning Google users also receive the migration offer until migrated or skipped.
-  if (!saved?.data || saved.account?.demo === true || saved.migrated === true || isUntouchedSeed(saved)) return null
+  if (!stashed && (saved.account?.demo === true || isUntouchedSeed(saved))) return null
   // Legacy 1D/1E storage stored a signed-in user's cleared local data directly in `saved.data` without `byUid`.
-  if (!saved.byUid && saved.account?.uid) return null
-  const areas = Array.isArray(saved.data.areas)
-    ? saved.data.areas.filter(a => a && typeof a.id === 'string' && typeof a.name === 'string' && a.name.trim())
+  if (!stashed && !saved.byUid && saved.account?.uid) return null
+  const areas = Array.isArray(src.areas)
+    ? src.areas.filter(a => a && typeof a.id === 'string' && typeof a.name === 'string' && a.name.trim())
     : []
-  const tasks = Array.isArray(saved.data.tasks)
-    ? saved.data.tasks.filter(t => t && typeof t.id === 'string' && !t.project && !t.guide && typeof t.title === 'string' && t.title.trim())
+  const tasks = Array.isArray(src.tasks)
+    ? src.tasks.filter(t => t && typeof t.id === 'string' && !t.project && !t.guide && typeof t.title === 'string' && t.title.trim())
     : []
   if (!areas.length && !tasks.length) return null
   return { areas, tasks }
@@ -160,6 +167,7 @@ function load(): {
   account: Account
   seeded: boolean
   migrated: boolean
+  legacy: Data | null
   migration: LocalMigration | null
 } {
   try {
@@ -185,6 +193,7 @@ function load(): {
         account,
         seeded: isUntouchedSeed(s),
         migrated: s.migrated === true,
+        legacy: s.legacy && s.migrated !== true ? normalizeData(s.legacy) : null,
         migration: extractMigration(s),
       }
     }
@@ -193,7 +202,7 @@ function load(): {
   }
   const dark = typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches
   const demoSeed = seed()
-  return { data: demoSeed, rootData: demoSeed, byUid: {}, theme: dark ? 'dark' : 'light', account: ACCOUNT0, seeded: true, migrated: false, migration: null }
+  return { data: demoSeed, rootData: demoSeed, byUid: {}, theme: dark ? 'dark' : 'light', account: ACCOUNT0, seeded: true, migrated: false, legacy: null, migration: null }
 }
 
 const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
@@ -345,6 +354,7 @@ function useStoreValue() {
   const byUidRef = useRef<Record<string, Data>>(initial.byUid)
   const seededRef = useRef(initial.seeded)
   const migratedRef = useRef(initial.migrated)
+  const legacyRef = useRef<Data | null>(initial.legacy)
   const migratingRef = useRef(false)
   const pendingWritesRef = useRef<Map<string, PendingWrite>>(new Map())
 
@@ -394,6 +404,7 @@ function useStoreValue() {
         account: nextAccount,
         ...(seededRef.current ? { seeded: true } : {}),
         ...(migratedRef.current ? { migrated: true } : {}),
+        ...(legacyRef.current ? { legacy: legacyRef.current } : {}),
       }))
     } catch {
       /* private mode: keep working in memory */
@@ -405,6 +416,32 @@ function useStoreValue() {
     document.documentElement.dataset.accent = account.accent
     persistLocal(localData, theme, account)
   }, [localData, theme, account, persistLocal])
+
+  // Projects live only in localStorage until Phase 2. If another tab saved them, adopt that copy so this tab
+  // never overwrites it later with a stale one.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== KEY || !e.newValue) return
+      try {
+        const saved = JSON.parse(e.newValue) as StoredState
+        const byUid: Record<string, Data> = {}
+        if (saved.byUid && typeof saved.byUid === 'object') {
+          for (const [k, v] of Object.entries(saved.byUid)) byUid[k] = normalizeData(v)
+        }
+        byUidRef.current = byUid
+        rootDataRef.current = normalizeData(saved.data)
+        legacyRef.current = saved.legacy && saved.migrated !== true ? normalizeData(saved.legacy) : null
+        migratedRef.current = saved.migrated === true
+        const a = accountRef.current
+        const mine = a.demo ? rootDataRef.current : a.loggedIn && a.uid ? byUid[a.uid] : undefined
+        if (mine && JSON.stringify(mine) !== JSON.stringify(localDataRef.current)) setLocalData(mine)
+      } catch {
+        /* ignore a half-written or foreign value */
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   // Keep Mode Demo and first-visit sign-in completely free of Firebase downloads;
   // only dynamically import Firebase when a saved session, redirect return, or Google click needs it.
@@ -1216,12 +1253,13 @@ function useStoreValue() {
   const startDemo = useCallback(() => {
     // Leaving a real account for the demo loads fresh sample data without touching Firebase or saved per-uid buckets.
     if (!account.demo) {
+      // Unmigrated pre-cloud data must survive the demo: stash it so the migration offer still finds it after sign-in.
+      if (localBackupRef.current && !legacyRef.current) legacyRef.current = rootDataRef.current
       const fresh = seed()
       rootDataRef.current = fresh
       setLocalData(fresh)
     }
     seededRef.current = true
-    localBackupRef.current = null
     setPendingMigration(null)
     setNeedsAreas(false)
     setAuthError('')
@@ -1310,8 +1348,9 @@ function useStoreValue() {
       setCloudTasks(guides)
       // Preserve non-demo local projects for this new account; never copy untouched demo seed data.
       const existingUserLocal = byUidRef.current[curUid]
+      const localSource = legacyRef.current ?? rootDataRef.current
       const initialUserLocal = existingUserLocal ?? (localBackupRef.current
-        ? { ...rootDataRef.current, areas: [], tasks: rootDataRef.current.tasks.filter(t => t.project != null) }
+        ? { ...localSource, areas: [], tasks: localSource.tasks.filter(t => t.project != null) }
         : EMPTY_DATA)
       byUidRef.current = { ...byUidRef.current, [curUid]: initialUserLocal }
       setLocalData(initialUserLocal)
@@ -1336,6 +1375,7 @@ function useStoreValue() {
   const skipMigration = useCallback(() => {
     if (migratingRef.current) return
     migratedRef.current = true
+    legacyRef.current = null
     localBackupRef.current = null
     setPendingMigration(null)
     setMigrationError('')
@@ -1411,6 +1451,7 @@ function useStoreValue() {
       }
 
       migratedRef.current = true
+      legacyRef.current = null
       localBackupRef.current = null
       setPendingMigration(null)
       setMigrating(false)

@@ -124,6 +124,8 @@ Web/PWA: seperti sekarang (`ReminderRunner`), hanya saat aplikasi terbuka. Andro
 
 Bukan versi final; dipakai sebagai acuan saat menulis `firestore.rules` dan diuji dengan Firebase Emulator.
 
+> **Peringatan (26 Nov 2026): jangan salin draf di bawah.** Bagian proyek dan undangannya punya celah keamanan, dijelaskan di §4.1. `firestore.rules` yang sudah dibangun di Fase 1 (bagian `users`, area, tugas, pengingat) lebih ketat daripada draf ini dan menjadi acuan untuk bagian tersebut.
+
 ```
 rules_version = '2';
 service cloud.firestore {
@@ -220,6 +222,16 @@ service cloud.firestore {
 Catatan yang harus diputuskan saat menulis rules final:
 - **Diputuskan (25 Nov 2026):** fitur Pro di tugas proyek (durasi, ulangi Hari kerja/Bulanan, lebih dari satu pengingat) mengikuti paket **pemilik proyek**, konsisten dengan Timeline proyek (PRD §5.4). Anggota Gratis di proyek milik pengguna Pro boleh memakainya di proyek itu. Pengingat tetap disimpan per anggota, jadi batasnya juga mengikuti `ownerPlan` proyek untuk tugas proyek.
 - Pengecekan `activeOwned` di `users` perlu dipasangkan dengan `existsAfter` / `getAfter` pada proyek supaya penghitung tidak bisa diturunkan tanpa mengarsipkan proyek.
+
+### 4.1 Celah di draf, wajib ditutup di Fase 2
+1. **Pro palsu:** `projects` `create` tidak memeriksa `ownerPlan`, jadi klien bisa membuat proyek dengan `ownerPlan: 'pro'` (20 anggota dan fitur Pro). Wajib sama dengan `plan` asli di `users/{uid}`. `memberCount` harus 1, `memberIds` harus `[uid]`, `archived` harus `false`.
+2. **Kuota 5 proyek bisa diakali:** `activeOwned` bisa diturunkan sendiri karena perubahannya tidak terikat pada perubahan proyek tertentu.
+3. **Pulihkan arsip tanpa menambah hitungan:** `update` pemilik bisa mengubah `archived` tanpa `activeOwned` ikut berubah.
+4. **Undangan bisa dibajak:** `invites` hanya memeriksa `ownerId` pada data baru, jadi pengguna lain bisa menimpa undangan yang sudah ada atau membuat undangan yang menunjuk proyek orang lain. `joinProject` juga wajib memeriksa `projects/{pid}.ownerId == invite.ownerId` dan `inviteToken == token`.
+5. **Token bisa ditebak:** UI saat ini membuat token dari id proyek (`Share.tsx`). Token harus acak (`crypto.getRandomValues`, minimal 20 karakter).
+6. **Pengingat tugas proyek:** dokumen `reminders/{taskId}` perlu `projectId` supaya aturan bisa membaca `ownerPlan` dan memastikan penulisnya anggota.
+7. **Riwayat aktivitas butuh pelaku:** trigger Firestore tidak otomatis tahu siapa penulisnya. Tugas proyek wajib menyimpan `updatedBy`, yang dipaksa aturan sama dengan `request.auth.uid`.
+8. **Dokumen anggota:** `members` `create` harus membatasi field dan `role`.
 
 ## 5. Cloud Functions
 

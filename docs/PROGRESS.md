@@ -39,14 +39,14 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Belum dibangun
 
-1. **Backend** (tugas Fase 1 yang siap diserahkan: `docs/HANDOFF-FASE1.md`; rancangan lengkap di `docs/BACKEND.md`; PRD §8, pilihan teknis di PRD §9.1: Firebase + login Google + Xendit + Google Play Billing + Capacitor): akun sungguhan, sinkronisasi cloud, validasi kuota Gratis/Pro di server, tautan undangan sungguhan, realtime. Termasuk alur bergabung: daftar/masuk dari tautan, lalu "Masukkan ke area mana?" dengan area milik anggota sendiri (`project_members.area_id`, PRD §5.4, DESIGN §6.25). Saat ini semua data hanya di `localStorage` browser.
+1. **Backend** (Fase 1 selesai; tugas Fase 2 yang siap diserahkan: `docs/HANDOFF-FASE2.md`; rancangan lengkap di `docs/BACKEND.md`; PRD §8, pilihan teknis di PRD §9.1: Firebase + login Google + Xendit + Google Play Billing + Capacitor): akun sungguhan, sinkronisasi cloud, validasi kuota Gratis/Pro di server, tautan undangan sungguhan, realtime. Termasuk alur bergabung: daftar/masuk dari tautan, lalu "Masukkan ke area mana?" dengan area milik anggota sendiri (`project_members.area_id`, PRD §5.4, DESIGN §6.25). Saat ini semua data hanya di `localStorage` browser.
 2. **Pengingat saat aplikasi tertutup**: butuh push dari server atau Local Notifications Capacitor. Selama TaskFlow terbuka, notifikasi sudah jalan.
 3. **Capacitor Android** (PRD §4): paket Android dan Google Play Billing. PWA sudah ada. Saat itu, getaran memakai `@capacitor/haptics` (perlu persetujuan dependency) supaya iOS ikut.
 4. **Overlay Google Calendar** (Pro): belum ada desainnya (DESIGN.md §10).
 
 ## Keterbatasan yang diketahui
 
-- **Fase 1 menunggu tinjauan ulang:** perbaikan P1–P4 dari `docs/HANDOFF-FASE1-PERBAIKAN.md` sudah selesai di branch `feat/backend-fase-1` dan menunggu tinjauan ulang sebelum Fase 2 dimulai.
+- **Fase 1 final setelah tinjauan ulang (26 Nov 2026).** Sisa kecil yang sudah ditangani: "Coba Mode Demo" tidak lagi menimpa data lokal lama yang belum dimigrasikan (disimpan di slot `legacy` dan tetap ditawarkan saat login), dan data lokal disinkronkan antar tab lewat event `storage`. Yang sengaja tidak diubah: penulisan saat halaman ditutup tidak dijamin oleh browser (ketikan terakhir bisa hilang pada kasus langka), dan berkas Firebase baru tersimpan service worker setelah dipakai pertama kali. Belum diuji: penulisan saat offline dan alur login penuh setelah perubahan terakhir (peramban uji tidak bisa menjangkau `apis.google.com`).
 - Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`, dipisah per `uid` akun sehingga aman saat keluar-masuk atau ganti akun, tetapi **terikat ke satu perangkat sampai Fase 2**); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
 - Tes otomatis baru mencakup Security Rules (`npm run test:rules`); belum ada tes UI atau linter. Pemeriksaan = `npm run build` + `npm run test:rules` + cek manual di browser.
