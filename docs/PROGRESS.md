@@ -36,6 +36,7 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 | Backend Fase 1D — `store.tsx` tersambung ke Firestore untuk area & tugas lepas: listener realtime `onSnapshot` (`users/{uid}`, `areas`, `tasks`), `plan` hanya-baca dari `users/{uid}` sebagai dasar `isPro`, seluruh mutasi area & tugas lepas menulis ke Firestore (termasuk `moveTask` lintas lepas↔proyek dan Urungkan 6 detik online/offline), proyek/aktivitas/setelan tetap lokal, Mode Demo tetap lokal | `src/store.tsx` | HANDOFF-FASE1 §4 (1D); memakai cache offline `persistentLocalCache` |
 | Backend Fase 1E — Pindahkan data lokal ke akun: deteksi data lokal non-demo sebelum login pertama, dialog `Modal`/`Sheet` "Pindahkan data di perangkat ini ke akun Anda?" (Pindahkan / Lewati), tulis batch maks. 500 per batch untuk area & tugas lepas saja, idempoten dan tahan klik ganda | `src/store.tsx`, `src/App.tsx`, `docs/DESIGN.md` | HANDOFF-FASE1 §4 (1E) |
 | Perbaikan Fase 1 (P1–P4): penyimpanan lokal proyek per `uid` (`byUid`) + tawaran migrasi bagi pengguna lama (P1), antrean tulis debounce 600 ms + flush `onBlur`/tutup/keluar/`visibilitychange` untuk teks judul/catatan/nama area (P2), lazy-load Firebase SDK lewat `import()` (chunk utama 1.160,84 kB → 360,41 kB; 0 unduhan Firebase di Masuk & Mode Demo) (P3), serta region `asia-southeast2` pada `onUserCreated` & perapian gaya/catatan (P4) | `src/store.tsx`, `src/lib/firebase.ts`, `src/components/TaskDetail.tsx`, `src/components/Manage.tsx`, `functions/index.js`, `docs/BACKEND.md`, `docs/HANDOFF-FASE1.md` | HANDOFF-FASE1-PERBAIKAN (P1–P4); menunggu tinjauan ulang sebelum Fase 2 |
+| Backend Fase 2A — Rancangan proyek & kolaborasi: dokumen rancangan untuk kuota proyek lewat Callable Function (Opsi a), resolver orang & warna avatar tetap dari `PEOPLE` + `isProFor(project)`, rencana pemecahan `store.tsx`, perhitungan listener & biaya baca, serta mekanisme Urungkan tunda 6 detik | `docs/FASE2-RANCANGAN.md` | HANDOFF-FASE2 §4 (2A); disetujui pemilik, siap lanjut ke 2B |
 
 ## Belum dibangun
 
@@ -53,6 +54,7 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
+- **26 Nov 2026** — Backend Fase 2A: dokumen rancangan Fase 2 (`docs/FASE2-RANCANGAN.md`) disetujui pemilik dengan keputusan Opsi (a) Callable Function untuk penegakan kuota proyek.
 - **26 Nov 2026** — Perbaikan Fase 1 (P1–P4): isolasi data lokal proyek per `uid` + tawaran migrasi bagi pengguna lama (P1), debounce 600 ms + flush tulis teks ke Firestore (P2), lazy-load Firebase SDK via `import()` sehingga chunk utama turun ke ~360 kB (P3), serta region `asia-southeast2` pada `onUserCreated` dan perapian gaya/dokumentasi (P4).
 - **25 Nov 2026** — Backend Fase 1E: tawaran pindahkan data lokal non-demo (area & tugas lepas) setelah login pertama dengan batch ≤500 tulis dan pengaman anti-duplikasi.
 - **25 Nov 2026** — Backend Fase 1D: `store.tsx` tersambung ke Firestore (`onSnapshot` + mutasi + Urungkan + offline) untuk area, tugas lepas, dan `plan` hanya-baca; proyek & Mode Demo tetap lokal.
