@@ -318,7 +318,7 @@ Satu layar masuk tanpa isian email, kata sandi, atau Lupa kata sandi (login hany
 - Pemisah `atau`, lalu tombol aksen **"Coba Mode Demo"** dengan keterangan *"Tanpa daftar. Data contoh tersimpan di perangkat ini."* Mode Demo tetap lokal dan tidak menyentuh Firebase.
 - Error tampil di atas tombol utama (`role="alert"`, latar `--high-soft`, teks `--high`) dengan pesan pendek yang tidak menyalahkan (*"Masuk dibatalkan."*, *"Tidak bisa terhubung ke Google. Periksa koneksi internet lalu coba lagi."*, *"Gagal masuk dengan Google. Coba lagi."*, *"Profil akun belum siap. Coba lagi sebentar."*).
 - Setelah login Google pertama (akun belum memiliki area di cloud), layar berpindah ke **"Pilih area awal"** (6.29), lalu menulis area pilihan dan tugas panduan (`guideTasks()`) ke akun.
-- Jika browser memiliki data lokal non-demo sebelum login pertama, setelah Pilih area awal tampil dialog (`Modal` 440 px di desktop, `Sheet` di HP): **"Pindahkan data di perangkat ini ke akun Anda?"** dengan ringkasan jumlah area/tugas lepas serta tombol **Pindahkan** (saat berjalan: *"Memindahkan…"*) dan **Lewati**. Hanya area dan tugas lepas yang dipindahkan (batch maks. 500 tulis per batch, idempoten sehingga tidak terduplikasi bila ditekan dua kali). Bila berhasil tampil toast *"[x area dan y tugas] dipindahkan ke akun Anda"*; bila gagal tampil alert *"Gagal memindahkan data lokal. Coba lagi."*
+- Jika browser memiliki data lokal non-demo sebelum login atau proyek lokal per-akun (`byUid`) yang belum dipindah, tampil dialog (`Modal` 440 px di desktop, `Sheet` di HP): **"Pindahkan data di perangkat ini ke akun Anda?"** dengan ringkasan jumlah area/tugas lepas/proyek serta tombol **Pindahkan** (saat berjalan: *"Memindahkan…"* + **Batalkan**) dan **Lewati**. Area dan tugas lepas ditulis per batch maks. 500 ops; proyek lokal dipindah satu per satu lewat server mengikuti kuota akun (PIC `"Anda"` dipetakan ke akun pengguna, PIC contoh dikosongkan; proyek yang melebihi kuota tetap tersimpan di perangkat dengan banner pengingat di tab Proyek). Salinan lokal tidak dihapus sebelum penulisan dikonfirmasi server, dan seluruh proses bersifat idempoten terhadap klik ganda maupun pembatalan di tengah jalan.
 - Keluar (`signOut`) mengakhiri sesi dan kembali ke layar Masuk.
 
 ### 6.21 Pencarian
@@ -450,6 +450,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.16 (27 Nov 2026):** Pemindahan proyek lokal (`byUid`) & tugas proyek saat login/proyek dengan kepatuhan kuota, pembatalan di tengah, dan idempotensi (§6.20).
 - **0.15 (26 Nov 2026):** Halaman undangan `/invite/{token}` memakai `${location.origin}`, penanganan 4 status undangan + belum login, dan dialog "Masukkan ke area mana?" setelah bergabung (§6.25).
 - **0.14 (25 Nov 2026):** Dialog tawaran pindahkan data lokal non-demo (area & tugas lepas) setelah login Google pertama (§6.20).
 - **0.13 (25 Nov 2026):** Catatan toast kegagalan sinkronisasi/Urungkan cloud (§6.16) dan pesan tombol Beli Pro akun Google sebelum pembayaran aktif (§6.18).

@@ -286,34 +286,41 @@ function LocalMigrationDialog({ mobile }: { mobile: boolean }) {
   const parts = [
     m.areas.length ? `${m.areas.length} area` : '',
     m.tasks.length ? `${m.tasks.length} tugas lepas` : '',
+    m.projects.length ? `${m.projects.length} proyek` : '',
   ].filter(Boolean)
+  const onDismiss = s.migrating ? s.abortMigration : s.skipMigration
   const body = (
     <>
       <h2 className="m-0 font-display text-[20px] leading-tight font-semibold">Pindahkan data di perangkat ini ke akun Anda?</h2>
       <p className="m-0 text-[13.5px] leading-normal text-fg2">
-        Ditemukan {parts.join(' dan ')} di browser ini. Data yang dipindahkan hanya area dan tugas lepas; proyek lokal tetap di perangkat ini.
+        {m.projects.length > 0
+          ? `Ditemukan ${parts.join(', ')} di perangkat ini. PIC tugas yang ditugaskan ke Anda ikut dipindahkan, sedangkan nama contoh dikosongkan. Proyek yang melebihi kuota tetap tersimpan di perangkat ini.`
+          : `Ditemukan ${parts.join(' dan ')} di browser ini.`}
       </p>
+      {s.migrating && s.migrationStatus && (
+        <div role="status" className="rounded-[8px] bg-surface2 px-6 py-4.5 text-[13px] text-fg2">{s.migrationStatus}</div>
+      )}
       {s.migrationError && <div role="alert" className="rounded-[8px] bg-high-soft px-6 py-4.5 text-[13px] text-high">{s.migrationError}</div>}
       <div className={mobile ? 'flex flex-col gap-3' : 'flex gap-4'}>
         {!mobile && (
-          <button type="button" disabled={s.migrating} onClick={s.skipMigration} className="h-20 flex-1 rounded-md border border-line2 bg-transparent text-[14px] font-medium text-fg disabled:opacity-50">
-            Lewati
+          <button type="button" onClick={onDismiss} className="h-20 flex-1 rounded-md border border-line2 bg-transparent text-[14px] font-medium text-fg">
+            {s.migrating ? 'Batalkan' : 'Lewati'}
           </button>
         )}
         <button type="button" disabled={s.migrating} onClick={() => void s.migrateLocalData()} className={`${mobile ? 'h-24 rounded-[12px] text-[15px]' : 'h-20 flex-1 rounded-md text-[14px]'} border-0 bg-fg font-semibold text-bg disabled:opacity-60`}>
           {s.migrating ? 'Memindahkan…' : 'Pindahkan'}
         </button>
         {mobile && (
-          <button type="button" disabled={s.migrating} onClick={s.skipMigration} className="h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg disabled:opacity-50">
-            Lewati
+          <button type="button" onClick={onDismiss} className="h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg">
+            {s.migrating ? 'Batalkan' : 'Lewati'}
           </button>
         )}
       </div>
     </>
   )
   return mobile
-    ? <Sheet onClose={s.skipMigration} label="Pindahkan data lokal">{body}</Sheet>
-    : <Modal onClose={s.skipMigration} label="Pindahkan data lokal" width={440}>{body}</Modal>
+    ? <Sheet onClose={onDismiss} label="Pindahkan data lokal">{body}</Sheet>
+    : <Modal onClose={onDismiss} label="Pindahkan data lokal" width={440}>{body}</Modal>
 }
 
 function Toast({ mobile }: { mobile?: boolean }) {

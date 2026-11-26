@@ -18,8 +18,16 @@ export function ProjectsView({ mobile }: { mobile: boolean }) {
     ? 'Belum ada proyek yang diarsipkan. Proyek yang selesai bisa diarsipkan supaya tidak menghabiskan kuota.'
     : area !== 'all' ? 'Belum ada proyek di area ini.' : 'Belum ada proyek. Proyek cocok untuk pekerjaan yang punya tenggat, misalnya tugas kelompok atau persiapan acara.'
 
+  const localBanner = !s.account.demo && !archives && s.localProjectCount > 0 && (
+    <div className={`flex items-center gap-5 rounded-md bg-surface2 py-5 pr-5 pl-7 text-[13px] text-fg2 ${mobile ? 'mx-8' : ''}`}>
+      <span className="flex-1">{s.localProjectCount} proyek lokal di perangkat ini belum dipindah ke akun.</span>
+      <button type="button" onClick={s.openLocalMigration} className="h-16 rounded-[8px] border-0 bg-fg px-6 text-[12.5px] font-semibold text-bg">Pindahkan</button>
+    </div>
+  )
+
   const list = (
     <>
+      {localBanner}
       {cards.length > 0 && (
         <div className={mobile ? 'flex flex-col gap-5 px-8' : 'grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-7'}>
           {cards.map(p => <ProjectCard key={p.id} p={p} mobile={mobile} />)}

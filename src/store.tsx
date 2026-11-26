@@ -27,6 +27,7 @@ import {
   EMPTY_DATA,
   STORAGE_KEY,
   UI0,
+  buildUserMigration,
   clearInviteUrl,
   getPendingInvite,
   hasRedirectFlag,
@@ -120,6 +121,7 @@ function useStoreValue() {
   const [authError, setAuthError] = useState('')
   const [pendingMigration, setPendingMigration] = useState<LocalMigration | null>(null)
   const [migrating, setMigrating] = useState(false)
+  const [migrationStatus, setMigrationStatus] = useState('')
   const [migrationError, setMigrationError] = useState('')
   const [firebaseRequested, setFirebaseRequested] = useState(hasRedirectFlag)
   const [inviteToken, setInviteToken] = useState<string | null>(() => {
@@ -145,6 +147,7 @@ function useStoreValue() {
   const migratedRef = useRef(initial.migrated)
   const legacyRef = useRef<Data | null>(initial.legacy)
   const migratingRef = useRef(false)
+  const migrationCancelledRef = useRef(false)
   const writeQueueRef = useRef(new WriteQueue())
   const projTaskUnsubsRef = useRef<Map<string, () => void>>(new Map())
   const projMemberUnsubsRef = useRef<Map<string, () => void>>(new Map())
@@ -491,10 +494,12 @@ function useStoreValue() {
                 setNeedsAreas(false)
                 setAuthBusy(false)
                 setAuthStatus('')
-                // Offer migration to returning users too when pre-backend non-demo local data exists on this browser.
-                if (localBackupRef.current) {
+                // Offer migration for any unmigrated pre-login data or per-uid Phase-1 local projects.
+                const mig = buildUserMigration(migratedRef.current ? null : localBackupRef.current, userLocal)
+                if (mig) {
                   setMigrationError('')
-                  setPendingMigration(localBackupRef.current)
+                  setMigrationStatus('')
+                  setPendingMigration(mig)
                 }
               },
               () => {
@@ -2062,7 +2067,30 @@ function useStoreValue() {
           { projectId: string }
         >(fb.fns, 'createProject')
         const res = await callCreate({ name, ownerArea: area, color, start: today(), due, sections: [] })
-        setUI({ view: 'project', projectId: res.data.projectId, mode: 'list', taskId: null })
+        const pid = res.data.projectId
+        const fallbackProj: Project = {
+          id: pid,
+          ownerId: curUid,
+          ownerPlan: isProRef.current ? 'pro' : 'free',
+          name,
+          area,
+          color,
+          start: today(),
+          due,
+          members: [curUid],
+          memberCount: 1,
+          sections: [],
+          archived: false,
+          inviteToken: undefined,
+        }
+        try {
+          const snap = await fb.getDoc(fb.doc(fb.db, 'projects', pid))
+          const proj = snap.exists() ? docToProject(snap, curUid) : fallbackProj
+          setCloudActiveProjects(prev => (prev.some(x => x.id === pid) ? prev : [...prev, proj]))
+        } catch {
+          setCloudActiveProjects(prev => (prev.some(x => x.id === pid) ? prev : [...prev, fallbackProj]))
+        }
+        setUI({ view: 'project', projectId: pid, mode: 'list', taskId: null })
         say(`Proyek "${name}" dibuat`)
         return true
       } catch (err) {
@@ -2192,10 +2220,12 @@ function useStoreValue() {
       setAuthBusy(false)
       setAuthStatus('')
       setUIState(UI0())
-      // Offer one-time migration after first login when non-demo local data existed on this device.
-      if (localBackupRef.current) {
+      // Offer one-time migration after first login when pre-login data or local projects exist.
+      const mig = buildUserMigration(migratedRef.current ? null : localBackupRef.current, initialUserLocal)
+      if (mig) {
         setMigrationError('')
-        setPendingMigration(localBackupRef.current)
+        setMigrationStatus('')
+        setPendingMigration(mig)
       }
       say(`Selamat datang, ${accountRef.current.name}!`)
     } catch {
@@ -2205,6 +2235,22 @@ function useStoreValue() {
     }
   }, [say, uid])
 
+  const openLocalMigration = useCallback(() => {
+    const curUid = cloudUidRef.current
+    if (!curUid) return
+    const mig = buildUserMigration(migratedRef.current ? null : localBackupRef.current, byUidRef.current[curUid])
+    if (!mig) return
+    setMigrationError('')
+    setMigrationStatus('')
+    setPendingMigration(mig)
+  }, [])
+
+  const abortMigration = useCallback(() => {
+    if (!migratingRef.current) return
+    migrationCancelledRef.current = true
+    setMigrationStatus('Membatalkan setelah proyek ini selesai…')
+  }, [])
+
   const skipMigration = useCallback(() => {
     if (migratingRef.current) return
     migratedRef.current = true
@@ -2212,21 +2258,38 @@ function useStoreValue() {
     localBackupRef.current = null
     setPendingMigration(null)
     setMigrationError('')
+    setMigrationStatus('')
     persistLocal(localDataRef.current, theme, accountRef.current)
   }, [persistLocal, theme])
 
-  /** Move pre-login local areas and loose tasks to Firestore in <=500-write batches; idempotent against double clicks. */
+  /** Move local areas, loose tasks, and local projects to Firestore safely (idempotent, quota-aware, cancellable). */
   const migrateLocalData = useCallback(async () => {
     if (migratingRef.current) return
     const fb = fbRef.current ?? await loadFirebase()
     fbRef.current = fb
     const curUid = cloudUidRef.current ?? fb.auth.currentUser?.uid
-    const backup = pendingMigration ?? localBackupRef.current
+    const backup = pendingMigration ?? (curUid
+      ? buildUserMigration(migratedRef.current ? null : localBackupRef.current, byUidRef.current[curUid])
+      : null)
     if (!curUid || !backup) return
+    if (backup.projects.length > 0 && !navigator.onLine) {
+      setMigrationError('Butuh koneksi internet untuk memindahkan proyek lokal.')
+      return
+    }
 
     migratingRef.current = true
+    migrationCancelledRef.current = false
     setMigrating(true)
     setMigrationError('')
+    setMigrationStatus(backup.areas.length || backup.tasks.length ? 'Memindahkan area dan tugas…' : 'Mempersiapkan pemindahan proyek…')
+
+    const migratedPids = new Set<string>()
+    const migratedTids = new Set<string>()
+    let movedAreas = 0
+    let movedTasks = 0
+    let movedProjects = 0
+    let movedProjectTasks = 0
+    let areasAndLooseDone = backup.areas.length === 0 && backup.tasks.length === 0
 
     try {
       const existingAreas = cloudAreasRef.current
@@ -2236,7 +2299,6 @@ function useStoreValue() {
       let nextOrder = Array.from(cloudAreaOrdersRef.current.values()).reduce((m, v) => Math.max(m, v), -1) + 1
 
       const ops: ((batch: WriteBatch) => void)[] = []
-      let movedAreas = 0
 
       backup.areas.forEach((a, idx) => {
         const cleanName = a.name.trim().slice(0, 60)
@@ -2262,7 +2324,6 @@ function useStoreValue() {
 
       const existingTaskIds = new Set(cloudTasksRef.current.map(t => t.id))
       const pro = isProRef.current
-      let movedTasks = 0
 
       backup.tasks.forEach((t, idx) => {
         if (t.project || t.guide) return
@@ -2286,19 +2347,187 @@ function useStoreValue() {
       migratedRef.current = true
       legacyRef.current = null
       localBackupRef.current = null
-      setPendingMigration(null)
+      areasAndLooseDone = true
+      // Keep any unmigrated pre-login projects safely inside per-uid local backup before clearing legacyRef.
+      if (backup.projects.length > 0) {
+        const baseLocal = byUidRef.current[curUid] ?? EMPTY_DATA
+        const seenPids = new Set(baseLocal.projects.map(p => p.id))
+        const seenTids = new Set(baseLocal.tasks.map(t => t.id))
+        const mergedLocal: Data = {
+          ...baseLocal,
+          projects: [...baseLocal.projects, ...backup.projects.filter(p => !seenPids.has(p.id))],
+          tasks: [...baseLocal.tasks, ...backup.projectTasks.filter(t => !seenTids.has(t.id))],
+        }
+        byUidRef.current = { ...byUidRef.current, [curUid]: mergedLocal }
+        setLocalData(mergedLocal)
+        persistLocal(mergedLocal, theme, accountRef.current)
+      } else {
+        persistLocal(localDataRef.current, theme, accountRef.current)
+      }
+
+      // Migrate archived local projects before active ones so archived projects don't hold active quota slots.
+      const orderedProjects = [
+        ...backup.projects.filter(p => p.archived),
+        ...backup.projects.filter(p => !p.archived),
+      ]
+      const uidTag = curUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16) || 'u'
+      const callCreate = fb.httpsCallable<
+        { projectId: string; name: string; ownerArea: string | null; color: string; start: string; due: string; sections: string[] },
+        { projectId: string; alreadyExisted?: boolean }
+      >(fb.fns, 'createProject')
+      const callArchive = fb.httpsCallable<{ projectId: string; archived: boolean }, unknown>(fb.fns, 'setProjectArchived')
+
+      let quotaHit = false
+      let cancelled = false
+
+      for (let i = 0; i < orderedProjects.length; i++) {
+        if (migrationCancelledRef.current) {
+          cancelled = true
+          break
+        }
+        const p = orderedProjects[i]
+        setMigrationStatus(`Memindahkan proyek ${i + 1} dari ${orderedProjects.length}…`)
+
+        const name = p.name.trim().slice(0, 200) || 'Proyek tanpa nama'
+        const color = p.color?.trim().slice(0, 60) || AREA_COLORS[0]
+        const due = typeof p.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.due) ? p.due : today()
+        const rawStart = typeof p.start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.start) ? p.start : due
+        const start = rawStart <= due ? rawStart : due
+        const mappedArea = p.area ? (areaIdMap.get(p.area) ?? (existingAreaIds.has(p.area) ? p.area : null)) : null
+        const cleanSections: string[] = []
+        let secChars = 0
+        for (const rawSec of p.sections ?? []) {
+          const sec = typeof rawSec === 'string' ? rawSec.trim().slice(0, 100) : ''
+          if (!sec || cleanSections.length >= 50 || secChars + sec.length > 5000) continue
+          cleanSections.push(sec)
+          secChars += sec.length
+        }
+
+        const cloudPid = `mig_${uidTag}_${safeDocId(p.id, `p${i}`)}`.slice(0, 128)
+        let alreadyExisted = false
+        try {
+          const res = await callCreate({ projectId: cloudPid, name, ownerArea: mappedArea, color, start, due, sections: cleanSections })
+          alreadyExisted = Boolean(res.data?.alreadyExisted)
+        } catch (err) {
+          if (fnErrCode(err) === 'functions/resource-exhausted') {
+            quotaHit = true
+            break
+          }
+          throw err
+        }
+
+        const pTasks = backup.projectTasks.filter(t => t.project === p.id)
+        const existingProjTaskIds = new Set<string>()
+        if (alreadyExisted) {
+          const existingSnap = await fb.getDocs(fb.collection(fb.db, 'projects', cloudPid, 'tasks'))
+          for (const docSnap of existingSnap.docs) existingProjTaskIds.add(docSnap.id)
+        }
+
+        const projOps: ((batch: WriteBatch) => void)[] = []
+        const seenProjTaskIds = new Set<string>()
+        pTasks.forEach((t, tIdx) => {
+          const cloudTid = safeDocId(t.id, `mig_pt_${i}_${tIdx}`)
+          if (seenProjTaskIds.has(cloudTid) || existingProjTaskIds.has(cloudTid)) return
+          seenProjTaskIds.add(cloudTid)
+          // Local PIC `'me'` maps to the user's UID; simulated sample people clear to unassigned (`null`).
+          const assignee = t.assignee === 'me' || t.assignee === curUid ? curUid : null
+          const section = t.section && cleanSections.includes(t.section) ? t.section : null
+          const payload = projectTaskToCloudDoc(
+            { ...t, id: cloudTid, section, assignee },
+            cloudPid,
+            curUid,
+            pro,
+            [curUid],
+            fb.serverTimestamp,
+          )
+          projOps.push(batch => batch.set(fb.doc(fb.db, 'projects', cloudPid, 'tasks', cloudTid), payload))
+          if (t.rems?.length && t.due) {
+            const cleanRems = t.rems.filter(k => VALID_REMS.includes(k)).slice(0, pro ? 6 : 1)
+            if (cleanRems.length) {
+              projOps.push(batch =>
+                batch.set(fb.doc(fb.db, 'users', curUid, 'reminders', cloudTid), {
+                  keys: cleanRems,
+                  projectId: cloudPid,
+                  updatedAt: fb.serverTimestamp(),
+                }),
+              )
+            }
+          }
+        })
+
+        for (let j = 0; j < projOps.length; j += BATCH_LIMIT) {
+          const batch = fb.writeBatch(fb.db)
+          for (const op of projOps.slice(j, j + BATCH_LIMIT)) op(batch)
+          await batch.commit()
+        }
+
+        if (p.archived) {
+          await callArchive({ projectId: cloudPid, archived: true })
+        }
+
+        // Remove ONLY after server writes are confirmed so crashes or cancellations never lose local projects.
+        migratedPids.add(p.id)
+        for (const t of pTasks) migratedTids.add(t.id)
+        movedProjects++
+        movedProjectTasks += pTasks.length
+
+        const curUserLocal = byUidRef.current[curUid]
+        if (curUserLocal) {
+          const nextUserLocal: Data = {
+            ...curUserLocal,
+            projects: curUserLocal.projects.filter(x => !migratedPids.has(x.id)),
+            tasks: curUserLocal.tasks.filter(x => !migratedTids.has(x.id) && !migratedPids.has(x.project ?? '')),
+          }
+          byUidRef.current = { ...byUidRef.current, [curUid]: nextUserLocal }
+          setLocalData(nextUserLocal)
+          persistLocal(nextUserLocal, theme, accountRef.current)
+        }
+      }
+
+      const remainingProjects = backup.projects.filter(p => !migratedPids.has(p.id))
+      const remainingProjectTasks = backup.projectTasks.filter(t => !migratedPids.has(t.project ?? ''))
+
       setMigrating(false)
       migratingRef.current = false
-      persistLocal(localDataRef.current, theme, accountRef.current)
-      const parts = [
-        movedAreas ? `${movedAreas} area` : '',
-        movedTasks ? `${movedTasks} tugas` : '',
-      ].filter(Boolean)
-      say(parts.length ? `${parts.join(' dan ')} dipindahkan ke akun Anda` : 'Data lokal sudah ada di akun Anda')
+      setMigrationStatus('')
+
+      if (remainingProjects.length === 0) {
+        setPendingMigration(null)
+        const parts = [
+          movedAreas ? `${movedAreas} area` : '',
+          movedTasks ? `${movedTasks} tugas` : '',
+          movedProjects ? `${movedProjects} proyek` : '',
+          movedProjectTasks ? `${movedProjectTasks} tugas proyek` : '',
+        ].filter(Boolean)
+        say(parts.length ? `${parts.join(', ')} dipindahkan ke akun Anda` : 'Data lokal sudah ada di akun Anda')
+      } else if (quotaHit) {
+        setPendingMigration({ areas: [], tasks: [], projects: remainingProjects, projectTasks: remainingProjectTasks })
+        const movedMsg = movedProjects ? `${movedProjects} proyek dipindahkan; ` : ''
+        setMigrationError(
+          `Kuota ${FREE_PROJECT_QUOTA} proyek aktif penuh. ${movedMsg}${remainingProjects.length} proyek tersisa tetap tersimpan di perangkat ini. Arsipkan proyek lain atau beralih ke Pro lalu coba lagi.`,
+        )
+      } else if (cancelled) {
+        setPendingMigration({ areas: [], tasks: [], projects: remainingProjects, projectTasks: remainingProjectTasks })
+        const movedMsg = movedProjects ? `${movedProjects} proyek sudah dipindah; ` : ''
+        setMigrationError(
+          `Pemindahan dibatalkan. ${movedMsg}${remainingProjects.length} proyek tersisa masih aman di perangkat ini.`,
+        )
+      }
     } catch {
+      const remainingProjects = backup.projects.filter(p => !migratedPids.has(p.id))
+      const remainingProjectTasks = backup.projectTasks.filter(t => !migratedPids.has(t.project ?? ''))
+      if (areasAndLooseDone || migratedPids.size > 0) {
+        setPendingMigration({
+          areas: areasAndLooseDone ? [] : backup.areas,
+          tasks: areasAndLooseDone ? [] : backup.tasks,
+          projects: remainingProjects,
+          projectTasks: remainingProjectTasks,
+        })
+      }
       setMigrating(false)
       migratingRef.current = false
-      setMigrationError('Gagal memindahkan data lokal. Coba lagi.')
+      setMigrationStatus('')
+      setMigrationError('Gagal memindahkan data lokal. Data yang belum pindah tetap tersimpan di perangkat ini. Coba lagi.')
     }
   }, [pendingMigration, persistLocal, say, theme])
 
@@ -2334,6 +2563,7 @@ function useStoreValue() {
     // Clear active in-memory view without erasing byUid[uid] or pre-backend data in localStorage.
     setLocalData(EMPTY_DATA)
     setPendingMigration(null)
+    setMigrationStatus('')
     setMigrationError('')
     setNeedsAreas(false)
     setAuthBusy(false)
@@ -2377,10 +2607,12 @@ function useStoreValue() {
 
   const go = useCallback((view: View, extra: Partial<UI> = {}) => setUI({ view, taskId: null, overlay: null, ...extra }), [setUI])
 
+  const localProjectCount = cloudActive ? localData.projects.length : 0
+
   return {
     ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, isProFor, isOwner, selfId, personOf, openPro,
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
-    pendingMigration, migrating, migrationError, migrateLocalData, skipMigration,
+    pendingMigration, migrating, migrationStatus, migrationError, localProjectCount, migrateLocalData, skipMigration, abortMigration, openLocalMigration,
     inviteToken, inviteState, joinedProjectId, ensureInviteToken, acceptInvite, dismissInvite, retryInvite, signInFromInviteDemo, pickJoinedArea,
     startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say, flushWrites,
     updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,

@@ -1,6 +1,6 @@
 import { today } from './dates'
 import { seed } from './seed'
-import type { Area, Data, ISODate, Task } from './types'
+import type { Area, Data, ISODate, Project, Task } from './types'
 
 export const STORAGE_KEY = 'taskflow-v1'
 const REDIRECT_FLAG = 'taskflow-auth-redirect'
@@ -35,6 +35,8 @@ export interface Account {
 export interface LocalMigration {
   areas: Area[]
   tasks: Task[]
+  projects: Project[]
+  projectTasks: Task[]
 }
 
 export interface UI {
@@ -186,11 +188,52 @@ export function extractMigration(saved: StoredState): LocalMigration | null {
   const areas = Array.isArray(src.areas)
     ? src.areas.filter(a => a && typeof a.id === 'string' && typeof a.name === 'string' && a.name.trim())
     : []
-  const tasks = Array.isArray(src.tasks)
-    ? src.tasks.filter(t => t && typeof t.id === 'string' && !t.project && !t.guide && typeof t.title === 'string' && t.title.trim())
+  const projects = Array.isArray(src.projects)
+    ? src.projects.filter(p => p && typeof p.id === 'string' && typeof p.name === 'string' && p.name.trim())
     : []
-  if (!areas.length && !tasks.length) return null
-  return { areas, tasks }
+  const projIds = new Set(projects.map(p => p.id))
+  const allTasks = Array.isArray(src.tasks) ? src.tasks : []
+  const tasks = allTasks.filter(t => t && typeof t.id === 'string' && !t.project && !t.guide && typeof t.title === 'string' && t.title.trim())
+  const projectTasks = allTasks.filter(t => t && typeof t.id === 'string' && t.project && projIds.has(t.project) && typeof t.title === 'string' && t.title.trim())
+  if (!areas.length && !tasks.length && !projects.length) return null
+  return { areas, tasks, projects, projectTasks }
+}
+
+/** Combine unmigrated pre-login local data with any per-uid Phase-1 local projects still on this device. */
+export function buildUserMigration(legacyBackup: LocalMigration | null, userLocal: Data | undefined): LocalMigration | null {
+  const areaMap = new Map<string, Area>()
+  for (const a of legacyBackup?.areas ?? []) areaMap.set(a.id, a)
+  const looseMap = new Map<string, Task>()
+  for (const t of legacyBackup?.tasks ?? []) looseMap.set(t.id, t)
+
+  const projMap = new Map<string, Project>()
+  for (const p of userLocal?.projects ?? []) {
+    if (p && typeof p.id === 'string' && typeof p.name === 'string' && p.name.trim()) projMap.set(p.id, p)
+  }
+  for (const p of legacyBackup?.projects ?? []) {
+    if (p && typeof p.id === 'string' && typeof p.name === 'string' && p.name.trim() && !projMap.has(p.id)) {
+      projMap.set(p.id, p)
+    }
+  }
+  const projIds = new Set(projMap.keys())
+  const ptMap = new Map<string, Task>()
+  for (const t of userLocal?.tasks ?? []) {
+    if (t && typeof t.id === 'string' && t.project && projIds.has(t.project) && typeof t.title === 'string' && t.title.trim()) {
+      ptMap.set(t.id, t)
+    }
+  }
+  for (const t of legacyBackup?.projectTasks ?? []) {
+    if (t && typeof t.id === 'string' && t.project && projIds.has(t.project) && typeof t.title === 'string' && t.title.trim() && !ptMap.has(t.id)) {
+      ptMap.set(t.id, t)
+    }
+  }
+
+  const areas = [...areaMap.values()]
+  const tasks = [...looseMap.values()]
+  const projects = [...projMap.values()]
+  const projectTasks = [...ptMap.values()]
+  if (!areas.length && !tasks.length && !projects.length) return null
+  return { areas, tasks, projects, projectTasks }
 }
 
 export function loadLocalStore(): {
