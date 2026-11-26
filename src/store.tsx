@@ -16,6 +16,7 @@ import {
   docsToMembers,
   projectTaskPatchToCloud,
   projectTaskToCloudDoc,
+  randomInviteToken,
   safeDocId,
   sortCloudTasks,
   taskPatchToCloud,
@@ -26,11 +27,15 @@ import {
   EMPTY_DATA,
   STORAGE_KEY,
   UI0,
+  clearInviteUrl,
+  getPendingInvite,
   hasRedirectFlag,
   loadLocalStore,
   normalizeByUid,
   normalizeData,
+  parseInvitePath,
   saveLocalStore,
+  setPendingInvite,
   setRedirectFlag,
   type Accent,
   type Account,
@@ -47,6 +52,16 @@ import type { Activity, Area, Data, ISODate, Person, Priority, Project, ProjectM
 
 export type { Accent, Account, LocalMigration, ProCtx, Theme, UI, View }
 
+export interface InviteState {
+  status: 'idle' | 'loading' | 'ready' | 'invalid' | 'full' | 'offline'
+  projectId?: string
+  projectName?: string
+  ownerName?: string
+  memberCount?: number
+  due?: string
+  joining?: boolean
+}
+
 type FirebaseMod = typeof import('./lib/firebase')
 
 let fbPromise: Promise<FirebaseMod> | null = null
@@ -62,15 +77,6 @@ const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
 
 const statusActivity = (actor: string, title: string, status: Task['status']) =>
   status === 'done' ? `${actor} menyelesaikan "${title}"` : `${actor} memindah "${title}" ke ${STATUS[status]}`
-
-/** Generate a 24-char URL-safe random token (>= 20 chars required by Firestore Rules). */
-function randomInviteToken(): string {
-  const bytes = new Uint8Array(18)
-  crypto.getRandomValues(bytes)
-  let bin = ''
-  for (const b of bytes) bin += String.fromCharCode(b)
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
 
 function fnErrMsg(err: unknown, fallback: string): string {
   if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
@@ -116,6 +122,17 @@ function useStoreValue() {
   const [migrating, setMigrating] = useState(false)
   const [migrationError, setMigrationError] = useState('')
   const [firebaseRequested, setFirebaseRequested] = useState(hasRedirectFlag)
+  const [inviteToken, setInviteToken] = useState<string | null>(() => {
+    const fromUrl = parseInvitePath()
+    if (fromUrl) {
+      setPendingInvite(fromUrl)
+      return fromUrl
+    }
+    return getPendingInvite()
+  })
+  const [inviteState, setInviteState] = useState<InviteState>({ status: 'idle' })
+  const [inviteReloadTick, setInviteReloadTick] = useState(0)
+  const [joinedProjectId, setJoinedProjectId] = useState<string | null>(null)
 
   const timer = useRef<number>(undefined)
   const handledUid = useRef<string | null>(null)
@@ -132,6 +149,7 @@ function useStoreValue() {
   const projTaskUnsubsRef = useRef<Map<string, () => void>>(new Map())
   const projMemberUnsubsRef = useRef<Map<string, () => void>>(new Map())
   const knownActivePidsRef = useRef<Set<string>>(new Set())
+  const creatingInviteRef = useRef<Set<string>>(new Set())
 
   const cloudActive = Boolean(uid && account.loggedIn && !account.demo)
   const cloudUidRef = useRef<string | null>(null)
@@ -222,6 +240,8 @@ function useStoreValue() {
   cloudAreasRef.current = cloudAreas
   const cloudProjectTasksRef = useRef(cloudProjectTasks)
   cloudProjectTasksRef.current = cloudProjectTasks
+  const cloudActiveProjectsRef = useRef(cloudActiveProjects)
+  cloudActiveProjectsRef.current = cloudActiveProjects
   const cloudArchivedRef = useRef(cloudArchivedProjects)
   cloudArchivedRef.current = cloudArchivedProjects
   const cloudRemindersRef = useRef(cloudReminders)
@@ -703,6 +723,88 @@ function useStoreValue() {
     }).catch(() => { /* ignore if not permitted or offline */ })
     return () => { active = false }
   }, [cloudActive, ui.overlay, ui.projectId, cloudActiveProjects, cloudArchivedProjects])
+
+  // Resolve `/invite/{token}` once signed in, past onboarding, and Firestore is ready.
+  useEffect(() => {
+    if (!inviteToken) {
+      setInviteState({ status: 'idle' })
+      return
+    }
+    if (!cloudActive || !uid || needsAreas || account.demo) return
+    const fb = fbRef.current
+    if (!fb) return
+    if (inviteToken.length < 20 || inviteToken.includes('/')) {
+      setInviteState({ status: 'invalid' })
+      return
+    }
+    if (!navigator.onLine) {
+      setInviteState({ status: 'offline' })
+      return
+    }
+    let active = true
+    setInviteState({ status: 'loading' })
+    void fb.getDoc(fb.doc(fb.db, 'invites', inviteToken)).then(snap => {
+      if (!active) return
+      if (!snap.exists()) {
+        setInviteState({ status: 'invalid' })
+        return
+      }
+      const d = snap.data() as Record<string, unknown>
+      const projectId = typeof d.projectId === 'string' ? d.projectId : ''
+      if (d.active !== true || !projectId) {
+        setInviteState({ status: 'invalid' })
+        return
+      }
+      const already = cloudActiveProjectsRef.current.some(p => p.id === projectId)
+        || cloudArchivedRef.current.some(p => p.id === projectId)
+      if (already) {
+        setInviteToken(null)
+        setPendingInvite(null)
+        clearInviteUrl()
+        setInviteState({ status: 'idle' })
+        setUIState({ ...UI0(), view: 'project', projectId })
+        say('Anda sudah tergabung di proyek ini')
+        return
+      }
+      const memberCount = typeof d.memberCount === 'number' ? d.memberCount : 1
+      const projectName = typeof d.projectName === 'string' && d.projectName ? d.projectName : 'Proyek tanpa nama'
+      const ownerName = typeof d.ownerName === 'string' && d.ownerName ? d.ownerName : 'Seseorang'
+      const due = typeof d.due === 'string' ? d.due : ''
+      setInviteState({
+        status: d.full === true ? 'full' : 'ready',
+        projectId,
+        projectName,
+        ownerName,
+        memberCount,
+        due,
+      })
+    }).catch(err => {
+      if (!active) return
+      const code = fnErrCode(err)
+      if (!navigator.onLine || code.includes('unavailable')) {
+        setInviteState({ status: 'offline' })
+      } else {
+        setInviteState({ status: 'invalid' })
+      }
+    })
+    return () => { active = false }
+  }, [account.demo, cloudActive, inviteReloadTick, inviteToken, needsAreas, say, uid])
+
+  // If project snapshots arrive slightly after the invite read and confirm membership, open directly.
+  useEffect(() => {
+    if (!cloudActive || !inviteToken) return
+    if (inviteState.status !== 'ready' && inviteState.status !== 'full') return
+    const pid = inviteState.projectId
+    if (!pid) return
+    const already = cloudActiveProjects.some(p => p.id === pid) || cloudArchivedProjects.some(p => p.id === pid)
+    if (!already) return
+    setInviteToken(null)
+    setPendingInvite(null)
+    clearInviteUrl()
+    setInviteState({ status: 'idle' })
+    setUIState({ ...UI0(), view: 'project', projectId: pid })
+    say('Anda sudah tergabung di proyek ini')
+  }, [cloudActive, cloudActiveProjects, cloudArchivedProjects, inviteState.projectId, inviteState.status, inviteToken, say])
 
   const clearDraftTask = useCallback((id: string) => {
     setDraftTasks(prev => {
@@ -1637,11 +1739,117 @@ function useStoreValue() {
       return
     }
     const cur = dataRef.current.projects.find(p => p.id === pid)?.inviteToken
-    let tok = (Math.random().toString(36) + '00000').slice(2, 7)
-    while (tok === cur) tok = (Math.random().toString(36) + '00000').slice(2, 7)
+    let tok = randomInviteToken()
+    while (tok === cur) tok = randomInviteToken()
     updateProject(pid, { inviteToken: tok })
     say('Tautan baru dibuat. Tautan lama tidak berlaku lagi.')
   }, [runCloud, say, updateProject])
+
+  const ensureInviteToken = useCallback((pid: string) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (!curUid || !fb) return
+    const p = dataRef.current.projects.find(x => x.id === pid)
+    if (!p || (p.ownerId ?? curUid) !== curUid || p.archived) return
+    if (p.inviteToken && p.inviteToken.length >= 20) return
+    if (creatingInviteRef.current.has(pid)) return
+    creatingInviteRef.current.add(pid)
+    const nextTok = randomInviteToken()
+    const limit = isProForProject(p, isProRef.current, false) ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
+    const batch = fb.writeBatch(fb.db)
+    batch.set(fb.doc(fb.db, 'invites', nextTok), {
+      projectId: pid,
+      ownerId: curUid,
+      active: true,
+      createdAt: fb.serverTimestamp(),
+      projectName: p.name,
+      ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+      memberCount: p.members.length,
+      due: p.due,
+      full: p.members.length >= limit,
+    })
+    batch.update(fb.doc(fb.db, 'projects', pid), {
+      inviteToken: nextTok,
+      updatedAt: fb.serverTimestamp(),
+    })
+    void batch.commit()
+      .catch(() => say('Gagal membuat tautan undangan'))
+      .finally(() => {
+        creatingInviteRef.current.delete(pid)
+      })
+  }, [say])
+
+  const dismissInvite = useCallback(() => {
+    setInviteToken(null)
+    setPendingInvite(null)
+    clearInviteUrl()
+    setInviteState({ status: 'idle' })
+  }, [])
+
+  const retryInvite = useCallback(() => {
+    setInviteReloadTick(n => n + 1)
+  }, [])
+
+  const acceptInvite = useCallback(async () => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    const tok = inviteToken
+    if (!curUid || !fb || !tok) return
+    if (!navigator.onLine) {
+      setInviteState(prev => ({ ...prev, status: 'offline', joining: false }))
+      return
+    }
+    setInviteState(prev => ({ ...prev, joining: true }))
+    try {
+      const callJoin = fb.httpsCallable<{ token: string }, { projectId: string; alreadyMember: boolean }>(fb.fns, 'joinProject')
+      const res = await callJoin({ token: tok })
+      const pid = res.data.projectId
+      // Pull project doc immediately so ProjectView does not flash "Proyek tidak ditemukan." while snapshot arrives.
+      const alreadyLocal = cloudActiveProjectsRef.current.some(p => p.id === pid)
+      if (!alreadyLocal) {
+        try {
+          const snap = await fb.getDoc(fb.doc(fb.db, 'projects', pid))
+          if (snap.exists()) {
+            const proj = docToProject(snap, curUid)
+            if (proj.archived) {
+              setCloudArchivedProjects(prev => (prev.some(x => x.id === pid) ? prev : [proj, ...prev]))
+            } else {
+              setCloudActiveProjects(prev => (prev.some(x => x.id === pid) ? prev : [...prev, proj]))
+            }
+          }
+        } catch {
+          /* active project listener still delivers it */
+        }
+      }
+      setInviteToken(null)
+      setPendingInvite(null)
+      clearInviteUrl()
+      setInviteState({ status: 'idle' })
+      setUIState({ ...UI0(), view: 'project', projectId: pid })
+      if (res.data.alreadyMember) {
+        say('Anda sudah tergabung di proyek ini')
+      } else {
+        setJoinedProjectId(pid)
+      }
+    } catch (err) {
+      const code = fnErrCode(err)
+      if (!navigator.onLine || code.includes('unavailable')) {
+        setInviteState(prev => ({ ...prev, status: 'offline', joining: false }))
+      } else if (code.includes('resource-exhausted')) {
+        setInviteState(prev => ({ ...prev, status: 'full', joining: false }))
+      } else {
+        setInviteState({ status: 'invalid' })
+      }
+    }
+  }, [inviteToken, say])
+
+  const pickJoinedArea = useCallback((areaId: string | null) => {
+    const pid = joinedProjectId
+    setJoinedProjectId(null)
+    if (!pid || !areaId) return
+    updateProject(pid, { area: areaId })
+    say('Proyek dimasukkan ke area')
+  }, [joinedProjectId, say, updateProject])
 
   const removeMember = useCallback((pid: string, mid: string) => {
     const curUid = cloudUidRef.current
@@ -1886,6 +2094,7 @@ function useStoreValue() {
     seededRef.current = true
     setPendingMigration(null)
     setNeedsAreas(false)
+    setJoinedProjectId(null)
     setAuthError('')
     setAuthBusy(false)
     setAuthStatus('')
@@ -2116,6 +2325,12 @@ function useStoreValue() {
     setHiddenProjectIds({})
     setHiddenMembers({})
     cloudAreaOrdersRef.current = new Map()
+    creatingInviteRef.current.clear()
+    setInviteToken(null)
+    setPendingInvite(null)
+    clearInviteUrl()
+    setInviteState({ status: 'idle' })
+    setJoinedProjectId(null)
     // Clear active in-memory view without erasing byUid[uid] or pre-backend data in localStorage.
     setLocalData(EMPTY_DATA)
     setPendingMigration(null)
@@ -2134,6 +2349,12 @@ function useStoreValue() {
       /* keep user returned to sign-in screen even if network is down */
     }
   }, [clearCloudProjectListeners, flushAllPending])
+
+  const signInFromInviteDemo = useCallback(async () => {
+    if (inviteToken) setPendingInvite(inviteToken)
+    setAccountState(a => ({ ...a, uid: undefined, loggedIn: false, demo: false }))
+    await signInWithGoogle()
+  }, [inviteToken, signInWithGoogle])
 
   const buyPro = useCallback(() => {
     if (cloudUidRef.current) {
@@ -2160,6 +2381,7 @@ function useStoreValue() {
     ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, isProFor, isOwner, selfId, personOf, openPro,
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
     pendingMigration, migrating, migrationError, migrateLocalData, skipMigration,
+    inviteToken, inviteState, joinedProjectId, ensureInviteToken, acceptInvite, dismissInvite, retryInvite, signInFromInviteDemo, pickJoinedArea,
     startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say, flushWrites,
     updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
     renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,

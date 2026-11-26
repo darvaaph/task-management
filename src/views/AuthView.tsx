@@ -47,6 +47,11 @@ export function AuthView({ mobile }: { mobile: boolean }) {
       {!s.needsAreas ? (
         <>
           {head('Masuk ke TaskFlow', 'Lanjutkan ke tugas dan proyekmu.')}
+          {s.inviteToken && (
+            <div className="rounded-[8px] bg-accent-soft px-6 py-4.5 text-[13px] leading-normal text-fg">
+              Masuk dengan Google untuk membuka undangan proyek.
+            </div>
+          )}
           {errBox}
           <button
             type="button"

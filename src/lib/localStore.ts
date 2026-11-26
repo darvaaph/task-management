@@ -4,6 +4,7 @@ import type { Area, Data, ISODate, Task } from './types'
 
 export const STORAGE_KEY = 'taskflow-v1'
 const REDIRECT_FLAG = 'taskflow-auth-redirect'
+const INVITE_FLAG = 'taskflow-pending-invite'
 
 export type View = 'today' | 'inbox' | 'jadwal' | 'projects' | 'project'
 export type Theme = 'light' | 'dark'
@@ -104,6 +105,40 @@ export const setRedirectFlag = (on: boolean) => {
     else sessionStorage.removeItem(REDIRECT_FLAG)
   } catch {
     /* ignore private mode */
+  }
+}
+
+export const parseInvitePath = (pathname = typeof location !== 'undefined' ? location.pathname : '/'): string | null => {
+  const m = pathname.match(/^\/invite\/([^/]+)\/?$/)
+  if (!m) return null
+  try {
+    return decodeURIComponent(m[1]).trim() || null
+  } catch {
+    return m[1].trim() || null
+  }
+}
+
+export const getPendingInvite = (): string | null => {
+  try {
+    return sessionStorage.getItem(INVITE_FLAG) || null
+  } catch {
+    return null
+  }
+}
+
+export const setPendingInvite = (token: string | null) => {
+  try {
+    if (token) sessionStorage.setItem(INVITE_FLAG, token)
+    else sessionStorage.removeItem(INVITE_FLAG)
+  } catch {
+    /* ignore private mode */
+  }
+}
+
+export const clearInviteUrl = () => {
+  if (typeof location === 'undefined' || typeof history === 'undefined') return
+  if (location.pathname.startsWith('/invite/')) {
+    history.replaceState(null, '', '/')
   }
 }
 

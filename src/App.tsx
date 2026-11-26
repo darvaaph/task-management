@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { QuickSheet } from './components/Composer'
+import { InviteView, PickMemberAreaDialog } from './components/Invite'
 import { ManageAreas, ManageProject } from './components/Manage'
 import { ShareProject } from './components/Share'
 import { Search, SearchButton } from './components/Search'
@@ -59,10 +60,12 @@ export default function App() {
       {s.ui.overlay === 'share' && proj && <ShareProject project={proj} mobile={mobile} />}
       {s.ui.overlay === 'areas' && <ManageAreas mobile={mobile} />}
       {s.ui.pro && <ProScreen mobile={mobile} />}
+      {s.joinedProjectId && <PickMemberAreaDialog mobile={mobile} />}
       {s.pendingMigration && <LocalMigrationDialog mobile={mobile} />}
     </>
   )
   if (!s.account.loggedIn) return <><AuthView mobile={mobile} /><Toast mobile={mobile} /></>
+  if (s.inviteToken) return <><InviteView mobile={mobile} /><Toast mobile={mobile} /></>
 
   // Composer state resets whenever the page changes.
   const pageKey = s.ui.view + ':' + (s.ui.projectId ?? '')

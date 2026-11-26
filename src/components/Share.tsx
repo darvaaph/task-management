@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FREE_MEMBER_QUOTA, PRO_MEMBER_QUOTA } from '../lib/constants'
 import { agoLabel, fmt } from '../lib/dates'
 import type { Project } from '../lib/types'
@@ -18,8 +18,16 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
   const limit = pro ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
   const n = P.members.length
   const full = n >= limit
-  const tok = P.inviteToken || ('x7' + P.id.slice(0, 3)).padEnd(5, 'q')
-  const link = `taskflow.id/invite/${tok}`
+
+  useEffect(() => {
+    if (!s.account.demo && owner && !P.archived && !P.inviteToken) {
+      s.ensureInviteToken(P.id)
+    }
+  }, [s, owner, P.archived, P.inviteToken, P.id])
+
+  const tok = P.inviteToken || (s.account.demo ? ('demo_' + P.id + '_0123456789abcdef').slice(0, 24) : '')
+  const origin = typeof location !== 'undefined' ? location.origin : ''
+  const link = tok ? `${origin}/invite/${tok}` : ''
   const acts = s.activity.filter(a => a.p === P.id).slice(0, 8)
   const capColor = full ? 'var(--high)' : 'var(--accent)'
   const planTag = s.account.demo ? 'Demo' : pro ? 'Pro' : 'Gratis'
@@ -27,8 +35,9 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
   const inviteMeta = `${n} anggota · tenggat ${fmt(P.due)}`
 
   const copy = () => {
+    if (!link) return
     try {
-      navigator.clipboard?.writeText('https://' + link)
+      navigator.clipboard?.writeText(link)
     } catch {
       /* clipboard blocked in insecure context */
     }
@@ -50,16 +59,22 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
 
       <section className="flex flex-col gap-4">
         <span className="text-label text-fg3">TAUTAN UNDANGAN</span>
-        <div className="flex gap-3">
-          <div className={`flex ${linkH} min-w-0 flex-1 items-center rounded-md border border-line2 bg-bg px-6 font-mono text-[13px] font-medium text-fg`}>
-            <span className="truncate">{link}</span>
-          </div>
-          <button type="button" onClick={copy} className={`${linkH} flex-none rounded-md border-0 bg-fg px-8 text-[13px] font-semibold text-bg`}>Salin</button>
-        </div>
-        <div className="flex items-center gap-5 text-[12.5px] text-fg3">
-          <span className="flex-1 leading-[1.45]">Siapa pun yang punya tautan ini bisa bergabung selama kuota masih ada.</span>
-          {owner && <button type="button" onClick={() => s.resetInviteToken(P.id)} className={`whitespace-nowrap border-0 bg-transparent px-2 text-[12.5px] font-medium text-fg2 hover:text-fg ${mobile ? 'min-h-18' : 'py-2'}`}>Reset tautan</button>}
-        </div>
+        {P.archived && !s.account.demo ? (
+          <span className="text-[13px] leading-[1.45] text-fg3">Proyek yang diarsipkan tidak bisa dibagikan. Kembalikan dari arsip untuk membuat tautan undangan.</span>
+        ) : (
+          <>
+            <div className="flex gap-3">
+              <div className={`flex ${linkH} min-w-0 flex-1 items-center rounded-md border border-line2 bg-bg px-6 font-mono text-[13px] font-medium text-fg`}>
+                <span className="truncate">{link || 'Menyiapkan tautan…'}</span>
+              </div>
+              <button type="button" disabled={!link} onClick={copy} className={`${linkH} flex-none rounded-md border-0 bg-fg px-8 text-[13px] font-semibold text-bg disabled:opacity-40`}>Salin</button>
+            </div>
+            <div className="flex items-center gap-5 text-[12.5px] text-fg3">
+              <span className="flex-1 leading-[1.45]">Siapa pun yang punya tautan ini bisa bergabung selama kuota masih ada.</span>
+              {owner && <button type="button" onClick={() => s.resetInviteToken(P.id)} className={`whitespace-nowrap border-0 bg-transparent px-2 text-[12.5px] font-medium text-fg2 hover:text-fg ${mobile ? 'min-h-18' : 'py-2'}`}>Reset tautan</button>}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="flex flex-col gap-3">
@@ -98,13 +113,10 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
             )}
           </div>
         )}
-        {/* No backend yet, so nobody can really open the link: only the demo can fake a friend joining. */}
-        {s.account.demo ? (
+        {s.account.demo && (
           <button type="button" onClick={() => s.simulateJoin(P.id)} className={`self-start border-0 bg-transparent text-[12.5px] font-medium text-fg2 underline underline-offset-2 hover:text-fg ${mobile ? 'min-h-18 py-2' : 'py-2'}`}>
             Simulasi: teman membuka tautan
           </button>
-        ) : (
-          <span className="text-[12.5px] leading-[1.45] text-fg3">Teman bisa bergabung lewat tautan ini setelah sinkronisasi cloud aktif.</span>
         )}
       </section>
 

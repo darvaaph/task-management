@@ -355,9 +355,9 @@ Tombol "Bagikan" di header detail proyek (desktop dan HP).
 - Anggota: kuota "x dari 3" (Gratis) atau "x dari 20" (Pro) dengan bar; pemilik tidak bisa dikeluarkan; mengeluarkan anggota mengembalikan tugasnya ke pemilik, dengan Urungkan.
 - Kuota penuh: pesan + "Lihat Pro" (Gratis).
 - **Pratinjau undangan** (apa yang dilihat teman, termasuk "Proyek ini sudah penuh") tertutup secara bawaan: baris "Lihat tampilan undangan ›" (`aria-expanded`) membukanya di tempat.
-- **Halaman undangan** tidak menampilkan area pemilik (area itu pribadi): isinya logo, "<nama> mengundang Anda ke", nama proyek, "x anggota · tenggat <tanggal>", lalu **Gabung proyek** dan "Belum punya akun? Teman diminta daftar dulu, lalu otomatis masuk ke proyek ini."
-- **Setelah bergabung** (dibangun bersama backend): sheet/modal pendek "Masukkan ke area mana?" berisi chip area milik teman + "Nanti saja" (= Tanpa area). Tidak ada area baru yang dibuat otomatis. Di Kelola proyek, anggota bisa mengganti area ini untuk dirinya sendiri; pemilik mengganti area proyek seperti biasa.
-- **Sebelum backend ada:** tombol "Simulasi: teman membuka tautan" hanya muncul di mode demo. Akun biasa melihat "Teman bisa bergabung lewat tautan ini setelah sinkronisasi cloud aktif." Keduanya dihapus begitu tautan undangan sungguhan berfungsi.
+- **Halaman undangan** tidak menampilkan area pemilik (area itu pribadi): isinya logo, "<nama> mengundang Anda ke", nama proyek, "x anggota · tenggat <tanggal>", lalu **Gabung proyek**. Tautan memakai asal domain aktif (`${location.origin}/invite/{token}`). Status yang ditangani: tautan tidak berlaku/sudah diganti, proyek sudah penuh, sudah menjadi anggota (langsung membuka proyek), offline ("Butuh koneksi internet untuk bergabung."), dan belum masuk akun (simpan token sementara di sesi lalu lanjutkan otomatis setelah masuk).
+- **Setelah bergabung**: sheet/modal pendek "Masukkan ke area mana?" berisi chip area milik teman + "Nanti saja" (= Tanpa area). Tidak ada area baru yang dibuat otomatis. Di Kelola proyek, anggota bisa mengganti area ini untuk dirinya sendiri; pemilik mengganti area proyek seperti biasa.
+- **Mode Demo:** tombol "Simulasi: teman membuka tautan" hanya muncul di Mode Demo. Akun biasa langsung menampilkan tautan undangan sungguhan tanpa tombol simulasi.
 - Riwayat aktivitas (Pro): tambah tugas, ganti status, selesai, anggota bergabung/dikeluarkan.
 
 ### 6.26 Keadaan kosong dan akun baru
@@ -450,6 +450,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.15 (26 Nov 2026):** Halaman undangan `/invite/{token}` memakai `${location.origin}`, penanganan 4 status undangan + belum login, dan dialog "Masukkan ke area mana?" setelah bergabung (§6.25).
 - **0.14 (25 Nov 2026):** Dialog tawaran pindahkan data lokal non-demo (area & tugas lepas) setelah login Google pertama (§6.20).
 - **0.13 (25 Nov 2026):** Catatan toast kegagalan sinkronisasi/Urungkan cloud (§6.16) dan pesan tombol Beli Pro akun Google sebelum pembayaran aktif (§6.18).
 - **0.12 (25 Nov 2026):** Layar Masuk diperbarui ke login Google + Mode Demo (§6.20) dan Pilih area awal setelah login Google pertama (§6.29).

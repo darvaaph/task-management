@@ -13,6 +13,15 @@ export const VALID_REMS = ['m10', 'm30', 'h1', 'd0', 'd1', 'd3']
 export const safeDocId = (raw: string, fallback: string) =>
   raw.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || fallback
 
+/** Generate a cryptographically random 24-character URL-safe token (>= 20 chars required by Firestore Rules). */
+export function randomInviteToken(): string {
+  const bytes = new Uint8Array(18)
+  crypto.getRandomValues(bytes)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
 export const authErrMsg = (err: unknown) => {
   const code = err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
   if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return 'Masuk dibatalkan.'
