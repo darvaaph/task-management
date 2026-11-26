@@ -90,23 +90,91 @@ async function seedBaseData() {
 
     await db.doc(`users/${FREE_UID}/reminders/r-existing`).set({
       keys: ['m30'],
+      projectId: 'proj-free',
     })
+
+    const validInviteToken = 'tok_seed_1234567890abcdef'
 
     await db.doc('projects/proj-1').set({
       ownerId: PRO_UID,
       name: 'Tugas Akhir',
+      ownerArea: 'kantor',
+      color: 'var(--area-kantor)',
+      start: '2026-11-25',
+      due: '2026-12-10',
+      sections: ['Riset'],
+      archived: false,
       memberIds: [PRO_UID, FREE_UID],
+      memberCount: 2,
       ownerPlan: 'pro',
+      inviteToken: validInviteToken,
+      createdAt,
     })
 
     await db.doc('projects/proj-1/tasks/pt-1').set({
       title: 'Tugas proyek',
+      project: 'proj-1',
+      area: null,
+      section: 'Riset',
+      assignee: PRO_UID,
+      status: 'todo',
+      prio: 'med',
+      start: null,
+      due: '2026-12-01',
+      time: null,
+      dur: null,
+      rec: null,
+      notes: '',
+      createdBy: PRO_UID,
+      updatedBy: PRO_UID,
+      createdAt,
     })
 
-    await db.doc('invites/tok-1').set({
+    await db.doc('projects/proj-free').set({
+      ownerId: FREE_UID,
+      name: 'Proyek Gratis',
+      ownerArea: 'kuliah',
+      color: 'var(--area-kuliah)',
+      start: '2026-11-25',
+      due: '2026-12-05',
+      sections: [],
+      archived: false,
+      memberIds: [FREE_UID],
+      memberCount: 1,
+      ownerPlan: 'free',
+      inviteToken: null,
+      createdAt,
+    })
+
+    await db.doc('projects/proj-free/tasks/pt-free-1').set({
+      title: 'Tugas di proyek Gratis',
+      project: 'proj-free',
+      area: null,
+      section: null,
+      assignee: FREE_UID,
+      status: 'todo',
+      prio: 'med',
+      start: null,
+      due: '2026-12-02',
+      time: null,
+      dur: null,
+      rec: null,
+      notes: '',
+      createdBy: FREE_UID,
+      updatedBy: FREE_UID,
+      createdAt,
+    })
+
+    await db.doc(`invites/${validInviteToken}`).set({
       projectId: 'proj-1',
       ownerId: PRO_UID,
       active: true,
+      createdAt,
+      projectName: 'Tugas Akhir',
+      ownerName: 'Siti Pro',
+      memberCount: 2,
+      due: '2026-12-10',
+      full: false,
     })
 
     await db.doc('purchases/pay-1').set({
@@ -345,37 +413,31 @@ describe('users/{uid}/tasks — batasan fitur Pro (dur, rec, rems)', () => {
 })
 
 describe('users/{uid}/reminders — pengingat per pengguna', () => {
-  it('mengizinkan Gratis maksimal 1 pengingat, menolak >1 untuk Gratis, mengizinkan >1 untuk Pro', async () => {
+  it('mengizinkan 1 pengingat di proyek pemilik Gratis, menolak >1 di proyek Gratis atau tanpa projectId, mengizinkan >1 di proyek pemilik Pro', async () => {
     const freeDb = authedDb(FREE_UID)
     const proDb = authedDb(PRO_UID)
 
     await assertSucceeds(freeDb.doc(`users/${FREE_UID}/reminders/r-existing`).get())
-    await assertSucceeds(freeDb.doc(`users/${FREE_UID}/reminders/r-one`).set({ keys: ['d1'] }))
-    await assertFails(freeDb.doc(`users/${FREE_UID}/reminders/r-two`).set({ keys: ['m30', 'd1'] }))
-    await assertSucceeds(freeDb.doc(`users/${FREE_UID}/reminders/r-one`).delete())
+    await assertSucceeds(freeDb.doc(`users/${FREE_UID}/reminders/pt-free-1`).set({ keys: ['d1'], projectId: 'proj-free' }))
+    await assertFails(freeDb.doc(`users/${FREE_UID}/reminders/pt-free-1`).set({ keys: ['m30', 'd1'], projectId: 'proj-free' }))
+    await assertFails(freeDb.doc(`users/${FREE_UID}/reminders/pt-free-1`).set({ keys: ['d1'] }))
+    await assertSucceeds(freeDb.doc(`users/${FREE_UID}/reminders/pt-free-1`).delete())
 
-    await assertSucceeds(proDb.doc(`users/${PRO_UID}/reminders/r-two-pro`).set({ keys: ['m10', 'm30', 'd1'] }))
+    await assertSucceeds(proDb.doc(`users/${PRO_UID}/reminders/pt-1`).set({ keys: ['m10', 'm30', 'd1'], projectId: 'proj-1' }))
   })
 
   it('menolak tanpa login dan pengguna lain mengakses reminders', async () => {
     await assertFails(unauthedDb().doc(`users/${FREE_UID}/reminders/r-existing`).get())
     await assertFails(authedDb(OTHER_UID).doc(`users/${FREE_UID}/reminders/r-existing`).get())
-    await assertFails(authedDb(OTHER_UID).doc(`users/${FREE_UID}/reminders/r-existing`).set({ keys: ['d0'] }))
+    await assertFails(authedDb(OTHER_UID).doc(`users/${FREE_UID}/reminders/r-existing`).set({ keys: ['d0'], projectId: 'proj-free' }))
   })
 })
 
-describe('Koleksi Fase 2 dan server-only (projects, invites, purchases) ditolak penuh di Fase 1', () => {
-  it('menolak seluruh baca dan tulis pada projects, subkoleksinya, invites, dan purchases', async () => {
+describe('Koleksi server-only (purchases) dan akses ilegal tingkat koleksi tetap ditolak di Fase 2', () => {
+  it('menolak seluruh baca/tulis pada purchases, pembuatan proyek langsung dari klien, dan daftar seluruh invites', async () => {
     const proDb = authedDb(PRO_UID)
-    await assertFails(proDb.doc('projects/proj-1').get())
-    await assertFails(proDb.doc('projects/proj-1').update({ name: 'Ubah' }))
     await assertFails(proDb.doc('projects/proj-new').set({ ownerId: PRO_UID, name: 'Baru' }))
-    await assertFails(proDb.doc('projects/proj-1/tasks/pt-1').get())
-    await assertFails(proDb.doc('projects/proj-1/tasks/pt-2').set({ title: 'Tugas proyek baru' }))
-
-    await assertFails(proDb.doc('invites/tok-1').get())
     await assertFails(proDb.collection('invites').get())
-    await assertFails(proDb.doc('invites/tok-2').set({ projectId: 'proj-1', ownerId: PRO_UID }))
 
     await assertFails(proDb.doc('purchases/pay-1').get())
     await assertFails(proDb.doc('purchases/pay-2').set({ uid: PRO_UID }))

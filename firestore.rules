@@ -1,18 +1,18 @@
 rules_version = '2';
 
 // ===============================================================
-// Assumed Data Model (Backend Phase 1B — docs/BACKEND.md §2 & §4)
+// Assumed Data Model (Backend Phase 2B — docs/BACKEND.md §2 & §4.1, Option a)
 // ===============================================================
 //
 // Collection: users/{uid}
-//   Server-managed fields (Cloud Functions only, immutable to clients in Phase 1):
+//   Server-managed fields (Cloud Functions only, immutable to clients):
 //     - email: string
 //     - photoURL: string | null
 //     - plan: 'free' | 'pro'
 //     - proSource: 'xendit' | 'google_play' | 'manual' | null
 //     - proSince: timestamp | null
 //     - createdAt: timestamp
-//     - activeOwned: number (Phase 2 will allow atomic batch updates via getAfter)
+//     - activeOwned: number (Option a: managed exclusively by project lifecycle Cloud Functions)
 //   Client-writable fields (owner update only):
 //     - name: string (optional if absent/null initially; trimmed non-empty, <= 100 chars)
 //     - accent: 'indigo' | 'teal' | 'tangerine' | 'forest' | null (non-indigo requires Pro)
@@ -28,7 +28,7 @@ rules_version = '2';
 //     - color: string (required, trimmed non-empty, <= 60 chars)
 //     - order: number | null (optional)
 //
-// Collection: users/{uid}/tasks/{taskId} (loose tasks only; project tasks move to projects/{pid}/tasks in Phase 2)
+// Collection: users/{uid}/tasks/{taskId} (loose tasks only; project must be null)
 //   Fields:
 //     - title: string (required, trimmed non-empty, <= 300 chars)
 //     - project: null (optional; must be null if present)
@@ -50,14 +50,78 @@ rules_version = '2';
 //     - updatedAt: timestamp | null (optional)
 //     - completedAt: timestamp | null (optional)
 //
-// Collection: users/{uid}/reminders/{taskId}
+// Collection: users/{uid}/reminders/{taskId} (per-member reminders for shared project tasks)
 //   Fields:
-//     - keys: list<'m10'|'m30'|'h1'|'d0'|'d1'|'d3'> (required; <= 1 item Free, <= 6 items Pro)
+//     - keys: list<'m10'|'m30'|'h1'|'d0'|'d1'|'d3'> (required; <= 1 Free ownerPlan, <= 6 Pro ownerPlan)
+//     - projectId: string (required, <= 100 chars, immutable; taskId must exist under projects/{projectId}/tasks)
 //     - updatedAt: timestamp | null (optional)
 //
-// Denied in Phase 1:
-//   - projects/{pid} and all nested subcollections (Phase 2)
-//   - invites/{token} (Phase 2)
+// Collection: projects/{pid} (lifecycle & quota managed by Callable Cloud Functions — Option a)
+//   Server-managed / immutable to clients:
+//     - ownerId: string
+//     - memberIds: list<string>
+//     - memberCount: int
+//     - ownerPlan: 'free' | 'pro'
+//     - archived: bool
+//     - createdAt: timestamp
+//   Owner-updatable fields:
+//     - name: string (required, trimmed non-empty, <= 200 chars)
+//     - ownerArea: string | null (optional, <= 100 chars)
+//     - color: string (required, trimmed non-empty, <= 60 chars)
+//     - start: string (required, YYYY-MM-DD, <= 10 chars)
+//     - due: string (required, YYYY-MM-DD, <= 10 chars)
+//     - sections: list<string> (required, <= 50 items, joined length <= 5000 chars)
+//     - inviteToken: string | null (optional, 20..128 chars; when changed to non-null, must match active invites/{token})
+//     - updatedAt: timestamp | null (optional)
+//
+// Collection: projects/{pid}/members/{memberUid} (created/deleted by Cloud Functions only)
+//   Server-managed fields:
+//     - role: 'owner' | 'member'
+//     - name: string
+//     - photoURL: string | null
+//     - joinedAt: timestamp
+//   Self-updatable fields (by current project member only):
+//     - area: string | null (optional, <= 100 chars)
+//     - updatedAt: timestamp | null (optional)
+//
+// Collection: projects/{pid}/tasks/{taskId} (accessible to current project members)
+//   Fields (no rems or guide; Pro features follow project ownerPlan):
+//     - title: string (required, trimmed non-empty, <= 300 chars)
+//     - project: string | null (optional; must be null or equal to pid)
+//     - area: null (optional; must be null — member areas live on members/{uid})
+//     - section: string | null (optional, <= 100 chars)
+//     - assignee: string | null (optional; must be null or a uid in projects/{pid}.memberIds)
+//     - status: 'todo' | 'in_progress' | 'done' | null (optional)
+//     - prio: 'high' | 'med' | 'low' | null (optional)
+//     - start: string | null (optional, YYYY-MM-DD, <= 10 chars)
+//     - due: string | null (optional, YYYY-MM-DD, <= 10 chars)
+//     - time: string | null (optional, HH:MM, <= 5 chars)
+//     - dur: int | null (optional, 1..1440 minutes; requires project ownerPlan == 'pro')
+//     - rec: 'daily' | 'weekly' | 'weekdays' | 'monthly' | null (weekdays/monthly require project ownerPlan == 'pro')
+//     - notes: string | null (optional, <= 10000 chars)
+//     - createdBy: string (required == me() on create; immutable once set)
+//     - updatedBy: string (required == me() on every create and update for activity attribution)
+//     - createdAt: timestamp | null (optional; immutable once set)
+//     - updatedAt: timestamp | null (optional)
+//     - completedAt: timestamp | null (optional)
+//
+// Collection: projects/{pid}/activity/{actId}
+//   - Written exclusively by Cloud Functions; readable by current members only when project ownerPlan == 'pro'.
+//
+// Collection: invites/{token} (token length 20..128; single-doc get only, list denied)
+//   Fields:
+//     - projectId: string (required, <= 100 chars, immutable; must match non-archived owned project)
+//     - ownerId: string (required == me(), immutable)
+//     - active: bool (required == true on create; cannot be re-enabled once false)
+//     - createdAt: timestamp (required, immutable)
+//     - projectName: string (required, trimmed non-empty, <= 200 chars)
+//     - ownerName: string (required, trimmed non-empty, <= 100 chars)
+//     - memberCount: int (required on create, 1..20, immutable to clients)
+//     - due: string (required, YYYY-MM-DD, <= 10 chars)
+//     - full: bool (required on create, immutable to clients)
+//     - updatedAt: timestamp | null (optional)
+//
+// Denied to clients:
 //   - purchases/{purchaseId} (server-only, Cloud Functions)
 //   - all other unmatched paths (default deny)
 // ===============================================================
@@ -92,20 +156,40 @@ service cloud.firestore {
       return val is string && val.trim().size() > 0 && val.size() <= maxLen;
     }
 
+    // Ensure dynamic document IDs are non-empty single path segments before path interpolation.
+    function isDocId(val, maxLen) {
+      return isNonEmptyString(val, maxLen) && !val.matches('.*/.*');
+    }
+
     // Keep optional string validation flat (no nested helper calls) to stay well within
     // Firestore Rules' 1000-expression evaluation budget on full task updates.
     function optStr(val, maxLen) {
       return val == null || (val is string && val.size() <= maxLen);
     }
 
-    // Only the 6 reminder keys supported by TaskFlow (src/lib/logic.ts) are allowed.
-    // Built-in List.hasOnly() prevents arbitrary strings/types and avoids unrolled loops.
-    function validReminderKeys(items, uid) {
-      return items is list
-        && items.size() <= 6
-        && items.hasOnly(['m10', 'm30', 'h1', 'd0', 'd1', 'd3'])
-        // Check size <= 1 before isPro(uid) so Free writes do not pay for an extra get().
-        && (items.size() <= 1 || isPro(uid));
+    function projectExists(pid) {
+      return exists(/databases/$(database)/documents/projects/$(pid));
+    }
+
+    function projectData(pid) {
+      return get(/databases/$(database)/documents/projects/$(pid)).data;
+    }
+
+    function hasMember(proj, uid) {
+      let members = proj.get('memberIds', []);
+      return members is list && uid in members;
+    }
+
+    function isProjectMember(pid) {
+      return signedIn() && projectExists(pid) && hasMember(projectData(pid), me());
+    }
+
+    function canReadActivityForProject(proj) {
+      return hasMember(proj, me()) && proj.get('ownerPlan', 'free') == 'pro';
+    }
+
+    function canReadProjectActivity(pid) {
+      return signedIn() && projectExists(pid) && canReadActivityForProject(projectData(pid));
     }
 
     // ===============================================================
@@ -119,7 +203,7 @@ service cloud.firestore {
       let accent = d.get('accent', null);
 
       // Whitelist writable fields so server-managed fields (plan, proSource, proSince,
-      // createdAt, email, photoURL, and Phase-1 activeOwned) and arbitrary keys cannot be touched.
+      // createdAt, email, photoURL, and activeOwned under Option a) and arbitrary keys cannot be touched.
       return changed.hasOnly([
         'name',
         'accent',
@@ -183,7 +267,7 @@ service cloud.firestore {
         'completedAt'
       ])
       && isNonEmptyString(t.get('title', null), 300)
-      // Loose tasks cannot reference a project; project tasks live under projects/{pid}/tasks in Phase 2.
+      // Loose tasks cannot reference a project; project tasks live under projects/{pid}/tasks.
       && t.get('project', null) == null
       // Pro-only task fields: duration, weekday/monthly recurrence, and >1 reminder.
       && (dur == null || (dur is int && dur > 0 && dur <= 1440))
@@ -207,22 +291,205 @@ service cloud.firestore {
       && (!needsPro || isPro(uid));
     }
 
-    // Prevent clients from altering or erasing audit fields once populated.
+    // Prevent clients from altering or erasing audit fields once populated,
+    // and disallow forging createdBy when populating a previously unset field.
     function immutableTaskFieldsUnchanged() {
-      return (resource.data.get('createdBy', null) == null
-          || request.resource.data.get('createdBy', null) == resource.data.createdBy)
+      let prevCreator = resource.data.get('createdBy', null);
+      let nextCreator = request.resource.data.get('createdBy', null);
+      return (prevCreator == null
+          ? (nextCreator == null || nextCreator == me())
+          : nextCreator == prevCreator)
         && (resource.data.get('createdAt', null) == null
           || request.resource.data.get('createdAt', null) == resource.data.createdAt);
     }
 
-    function validReminder(uid) {
+    function validProjectReminderPlan(uid, pid, remCount) {
+      let proj = projectData(pid);
+      return hasMember(proj, uid)
+        && (remCount <= 1 || proj.get('ownerPlan', 'free') == 'pro');
+    }
+
+    function validProjectReminder(uid, taskId) {
       let r = request.resource.data;
+      let pid = r.get('projectId', null);
       // Use bracket notation r['keys'] so field lookup does not collide with Map.keys().
-      // Phase 2 will check ownerPlan via the task's project for shared project reminders.
-      return r.keys().hasOnly(['keys', 'updatedAt'])
+      // Shared project task reminders strictly follow the project owner's plan (ownerPlan), never isPro(uid),
+      // and verify taskId exists under projects/{pid}/tasks to block cross-project projectId spoofing.
+      return r.keys().hasOnly(['keys', 'projectId', 'updatedAt'])
         && 'keys' in r
-        && validReminderKeys(r['keys'], uid)
-        && (r.get('updatedAt', null) == null || r.updatedAt is timestamp);
+        && 'projectId' in r
+        && isDocId(pid, 100)
+        && r['keys'] is list
+        && r['keys'].size() <= 6
+        && r['keys'].hasOnly(['m10', 'm30', 'h1', 'd0', 'd1', 'd3'])
+        && (r.get('updatedAt', null) == null || r.updatedAt is timestamp)
+        && projectExists(pid)
+        && exists(/databases/$(database)/documents/projects/$(pid)/tasks/$(taskId))
+        && validProjectReminderPlan(uid, pid, r['keys'].size());
+    }
+
+    function validActiveInviteForProject(pid, tok) {
+      return existsAfter(/databases/$(database)/documents/invites/$(tok))
+        && getAfter(/databases/$(database)/documents/invites/$(tok)).data.get('projectId', '') == pid
+        && getAfter(/databases/$(database)/documents/invites/$(tok)).data.get('active', false) == true;
+    }
+
+    function validProjectUpdate(pid) {
+      let d = request.resource.data;
+      let changed = d.diff(resource.data).affectedKeys();
+      let tok = d.get('inviteToken', null);
+
+      // Lifecycle and access-control fields (ownerId, memberIds, memberCount, ownerPlan,
+      // archived, createdAt) are managed exclusively by Cloud Functions under Option (a).
+      return changed.hasOnly([
+        'name',
+        'ownerArea',
+        'color',
+        'start',
+        'due',
+        'sections',
+        'inviteToken',
+        'updatedAt'
+      ])
+      && isNonEmptyString(d.get('name', null), 200)
+      && optStr(d.get('ownerArea', null), 100)
+      && isNonEmptyString(d.get('color', null), 60)
+      && isNonEmptyString(d.get('start', null), 10)
+      && isNonEmptyString(d.get('due', null), 10)
+      && d.get('sections', null) is list
+      && d.sections.size() <= 50
+      // List.join() enforces that every section item is a string and bounds total size in O(1) expressions.
+      && d.sections.join('').size() <= 5000
+      && (tok == null || (tok is string && tok.size() >= 20 && tok.size() <= 128 && !tok.matches('.*/.*')))
+      && (!changed.hasAny(['inviteToken']) || tok == null || validActiveInviteForProject(pid, tok))
+      && (d.get('updatedAt', null) == null || d.updatedAt is timestamp);
+    }
+
+    function validMemberUpdate() {
+      let d = request.resource.data;
+      let changed = d.diff(resource.data).affectedKeys();
+
+      // A member can only update their own personal area mapping (and optional timestamp).
+      return changed.hasOnly(['area', 'updatedAt'])
+        && optStr(d.get('area', null), 100)
+        && (d.get('updatedAt', null) == null || d.updatedAt is timestamp);
+    }
+
+    function validProjectTask(pid, isCreate) {
+      let proj = projectData(pid);
+      let members = proj.get('memberIds', []);
+      let t = request.resource.data;
+      let dur = t.get('dur', null);
+      let rec = t.get('rec', null);
+      let assignee = t.get('assignee', null);
+      // Pro features inside shared projects follow the project owner's plan (ownerPlan), not the writer's plan.
+      let needsPro = dur != null || rec in ['weekdays', 'monthly'];
+
+      // Project tasks do not store rems (stored in users/{uid}/reminders/{taskId}) or starter guide flags.
+      return t.keys().hasOnly([
+        'title',
+        'project',
+        'area',
+        'section',
+        'assignee',
+        'status',
+        'prio',
+        'start',
+        'due',
+        'time',
+        'dur',
+        'rec',
+        'notes',
+        'createdBy',
+        'updatedBy',
+        'createdAt',
+        'updatedAt',
+        'completedAt'
+      ])
+      && isNonEmptyString(t.get('title', null), 300)
+      && (t.get('project', null) == null || (t.project is string && t.project == pid))
+      && t.get('area', null) == null
+      && (dur == null || (dur is int && dur > 0 && dur <= 1440))
+      && (rec == null || rec in ['daily', 'weekly', 'weekdays', 'monthly'])
+      && (t.get('status', null) == null || t.status in ['todo', 'in_progress', 'done'])
+      && (t.get('prio', null) == null || t.prio in ['high', 'med', 'low'])
+      && optStr(t.get('section', null), 100)
+      && (assignee == null || (assignee is string && members is list && assignee in members))
+      && optStr(t.get('start', null), 10)
+      && optStr(t.get('due', null), 10)
+      && optStr(t.get('time', null), 5)
+      && optStr(t.get('notes', null), 10000)
+      && t.get('updatedBy', null) is string
+      && t.updatedBy == me()
+      && ((isCreate && t.get('createdBy', null) is string && t.createdBy == me())
+          || (!isCreate && (t.get('createdBy', null) == null || (t.createdBy is string && t.createdBy.size() <= 128))))
+      && (t.get('createdAt', null) == null || t.createdAt is timestamp)
+      && (t.get('updatedAt', null) == null || t.updatedAt is timestamp)
+      && (t.get('completedAt', null) == null || t.completedAt is timestamp)
+      && (!needsPro || proj.get('ownerPlan', 'free') == 'pro');
+    }
+
+    function validInviteTargetProject(pid, token) {
+      let proj = projectData(pid);
+      return proj.get('ownerId', '') == me()
+        && proj.get('archived', false) == false
+        && existsAfter(/databases/$(database)/documents/projects/$(pid))
+        && getAfter(/databases/$(database)/documents/projects/$(pid)).data.get('inviteToken', null) == token;
+    }
+
+    function validInviteCreate(token) {
+      let d = request.resource.data;
+      let pid = d.get('projectId', null);
+
+      return token.size() >= 20
+        && token.size() <= 128
+        && d.keys().hasOnly([
+          'projectId',
+          'ownerId',
+          'active',
+          'createdAt',
+          'projectName',
+          'ownerName',
+          'memberCount',
+          'due',
+          'full',
+          'updatedAt'
+        ])
+        && d.get('ownerId', '') == me()
+        && isDocId(pid, 100)
+        && d.get('active', null) is bool
+        && d.active == true
+        && isNonEmptyString(d.get('projectName', null), 200)
+        && isNonEmptyString(d.get('ownerName', null), 100)
+        && d.get('memberCount', null) is int
+        && d.memberCount >= 1
+        && d.memberCount <= 20
+        && isNonEmptyString(d.get('due', null), 10)
+        && d.get('full', null) is bool
+        && d.get('createdAt', null) is timestamp
+        && (d.get('updatedAt', null) == null || d.updatedAt is timestamp)
+        && projectExists(pid)
+        && validInviteTargetProject(pid, token);
+    }
+
+    function validInviteUpdate() {
+      let d = request.resource.data;
+      let changed = d.diff(resource.data).affectedKeys();
+      let pid = resource.data.get('projectId', null);
+
+      // Only the invite & project owner may update summary metadata or deactivate a token;
+      // once deactivated (active == false), a token can never be reactivated.
+      return resource.data.get('ownerId', '') == me()
+        && isDocId(pid, 100)
+        && projectExists(pid)
+        && projectData(pid).get('ownerId', '') == me()
+        && changed.hasOnly(['active', 'projectName', 'ownerName', 'due', 'updatedAt'])
+        && d.get('active', null) is bool
+        && (resource.data.get('active', false) == true || d.active == false)
+        && isNonEmptyString(d.get('projectName', null), 200)
+        && isNonEmptyString(d.get('ownerName', null), 100)
+        && isNonEmptyString(d.get('due', null), 10)
+        && (d.get('updatedAt', null) == null || d.updatedAt is timestamp);
     }
 
     // ===============================================================
@@ -249,22 +516,46 @@ service cloud.firestore {
 
       match /reminders/{taskId} {
         allow read, delete: if isOwner(uid);
-        allow create, update: if isOwner(uid) && validReminder(uid);
+        allow create: if isOwner(uid) && validProjectReminder(uid, taskId);
+        allow update: if isOwner(uid)
+          && validProjectReminder(uid, taskId)
+          && request.resource.data.projectId == resource.data.get('projectId', request.resource.data.projectId);
       }
     }
 
-    // Phase 2: shared projects and nested subcollections (members, tasks, activity) are denied in Phase 1.
     match /projects/{pid} {
-      allow read, write: if false;
+      allow read: if signedIn() && me() in resource.data.get('memberIds', []);
+      // Created, archived/restored, and deleted exclusively via Callable Cloud Functions (Option a).
+      allow create, delete: if false;
+      allow update: if signedIn() && resource.data.get('ownerId', '') == me() && validProjectUpdate(pid);
 
-      match /{document=**} {
-        allow read, write: if false;
+      match /members/{memberUid} {
+        allow read: if isProjectMember(pid);
+        // Membership changes are managed exclusively by Cloud Functions (createProject, joinProject, removeMember).
+        allow create, delete: if false;
+        allow update: if isOwner(memberUid) && isProjectMember(pid) && validMemberUpdate();
+      }
+
+      match /tasks/{taskId} {
+        allow read, delete: if isProjectMember(pid);
+        allow create: if isProjectMember(pid) && validProjectTask(pid, true);
+        allow update: if isProjectMember(pid) && validProjectTask(pid, false) && immutableTaskFieldsUnchanged();
+      }
+
+      match /activity/{actId} {
+        allow read: if canReadProjectActivity(pid);
+        // Activity log entries are written exclusively by Cloud Functions.
+        allow write: if false;
       }
     }
 
-    // Phase 2: project invite links are denied in Phase 1.
     match /invites/{token} {
-      allow read, write: if false;
+      // Any signed-in user with an exact invite token may fetch that single document, never list the collection.
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && validInviteCreate(token);
+      allow update: if signedIn() && validInviteUpdate();
+      allow delete: if false;
     }
 
     // Server-only: payment records written exclusively by Cloud Functions.
