@@ -1,6 +1,7 @@
 import type { DocumentData, FieldValue, QueryDocumentSnapshot, QuerySnapshot, UpdateData } from 'firebase/firestore'
 import { AREA_COLORS } from './constants'
-import type { Area, Priority, Recurrence, Status, Task } from './types'
+import { today } from './dates'
+import type { Activity, Area, Priority, Project, ProjectMember, Recurrence, Status, Task } from './types'
 
 export const BATCH_LIMIT = 500
 
@@ -40,15 +41,67 @@ export function docsToAreas(snap: QuerySnapshot): { areas: Area[]; orders: Map<s
   }
 }
 
-export function docToTask(snap: QueryDocumentSnapshot): { task: Task; createdAtMs: number | null } {
+export function docToProject(snap: QueryDocumentSnapshot, uid: string, memberArea?: string | null): Project {
+  const d = snap.data()
+  const ownerId = typeof d.ownerId === 'string' ? d.ownerId : uid
+  const isOwner = ownerId === uid
+  const ownerArea = typeof d.ownerArea === 'string' ? d.ownerArea : null
+  const memberIds = Array.isArray(d.memberIds) ? d.memberIds.filter((x): x is string => typeof x === 'string') : [ownerId]
+  return {
+    id: snap.id,
+    name: typeof d.name === 'string' ? d.name : 'Proyek',
+    // Never expose the project owner's private area to another member; fall back to null until member's own area is set.
+    area: memberArea !== undefined ? memberArea : isOwner ? ownerArea : null,
+    color: typeof d.color === 'string' ? d.color : 'var(--accent)',
+    start: typeof d.start === 'string' ? d.start : today(),
+    due: typeof d.due === 'string' ? d.due : today(),
+    members: memberIds,
+    sections: Array.isArray(d.sections) ? d.sections.filter((x): x is string => typeof x === 'string') : [],
+    archived: d.archived === true,
+    ...(typeof d.inviteToken === 'string' && d.inviteToken ? { inviteToken: d.inviteToken } : {}),
+    ownerId,
+    ownerPlan: d.ownerPlan === 'pro' ? 'pro' : 'free',
+    memberCount: typeof d.memberCount === 'number' ? d.memberCount : memberIds.length,
+  }
+}
+
+export function docsToMembers(snap: QuerySnapshot): Record<string, ProjectMember> {
+  const map: Record<string, ProjectMember> = {}
+  for (const d of snap.docs) {
+    const x = d.data()
+    map[d.id] = {
+      uid: d.id,
+      role: x.role === 'owner' ? 'owner' : 'member',
+      area: typeof x.area === 'string' ? x.area : null,
+      name: typeof x.name === 'string' && x.name.trim() ? x.name.trim() : 'Anggota',
+      photoURL: typeof x.photoURL === 'string' ? x.photoURL : null,
+    }
+  }
+  return map
+}
+
+export function docsToActivity(snap: QuerySnapshot, projectId: string): Activity[] {
+  return snap.docs.map(d => {
+    const x = d.data()
+    const rawTs = x.createdAt
+    const ts = rawTs && typeof rawTs.toMillis === 'function' ? rawTs.toMillis() : Date.now()
+    return {
+      p: projectId,
+      text: typeof x.text === 'string' ? x.text : '',
+      ts,
+    }
+  })
+}
+
+export function docToTask(snap: QueryDocumentSnapshot, projectId: string | null = null): { task: Task; createdAtMs: number | null } {
   const d = snap.data()
   const rawCreated = d.createdAt
   const createdAtMs = rawCreated && typeof rawCreated.toMillis === 'function' ? rawCreated.toMillis() : null
   const task: Task = {
     id: snap.id,
     title: typeof d.title === 'string' ? d.title : '',
-    project: null,
-    area: typeof d.area === 'string' ? d.area : null,
+    project: projectId ?? (typeof d.project === 'string' ? d.project : null),
+    area: projectId ? null : (typeof d.area === 'string' ? d.area : null),
     section: typeof d.section === 'string' ? d.section : null,
     assignee: typeof d.assignee === 'string' ? d.assignee : null,
     status: VALID_STATUS.includes(d.status as Status) ? (d.status as Status) : 'todo',
@@ -59,8 +112,8 @@ export function docToTask(snap: QueryDocumentSnapshot): { task: Task; createdAtM
     notes: typeof d.notes === 'string' ? d.notes : '',
     rec: VALID_REC.includes(d.rec as Recurrence) ? (d.rec as Recurrence) : null,
     dur: typeof d.dur === 'number' ? d.dur : null,
-    ...(Array.isArray(d.rems) ? { rems: d.rems.filter((x): x is string => typeof x === 'string') } : {}),
-    ...(d.guide === true ? { guide: true } : {}),
+    ...(!projectId && Array.isArray(d.rems) ? { rems: d.rems.filter((x): x is string => typeof x === 'string') } : {}),
+    ...(!projectId && d.guide === true ? { guide: true } : {}),
   }
   return { task, createdAtMs }
 }
@@ -98,7 +151,42 @@ export function taskToCloudDoc(t: Task, ownerUid: string, pro: boolean, serverTs
   return payload
 }
 
-/** Map a partial Task update to Firestore fields; returns null when nothing valid should be sent yet. */
+/** Build a Firestore-rules-compliant payload for creating/restoring a project task document. */
+export function projectTaskToCloudDoc(
+  t: Task,
+  projectId: string,
+  actorUid: string,
+  ownerPro: boolean,
+  validMembers: string[],
+  serverTs: () => FieldValue,
+): Record<string, unknown> {
+  const title = t.title.trim().slice(0, 300) || 'Tanpa judul'
+  const dur = ownerPro && typeof t.dur === 'number' && t.dur > 0 ? Math.min(1440, Math.round(t.dur)) : null
+  const rec = t.rec && (ownerPro || t.rec === 'daily' || t.rec === 'weekly') ? t.rec : null
+  const assignee = t.assignee && validMembers.includes(t.assignee) ? t.assignee : null
+  return {
+    title,
+    project: projectId,
+    area: null,
+    section: t.section ?? null,
+    assignee,
+    status: t.status,
+    prio: t.prio,
+    start: t.start ?? null,
+    due: t.due ?? null,
+    time: t.time ?? null,
+    dur,
+    rec,
+    notes: (t.notes ?? '').slice(0, 10000),
+    createdBy: actorUid,
+    updatedBy: actorUid,
+    createdAt: serverTs(),
+    updatedAt: serverTs(),
+    completedAt: t.status === 'done' ? serverTs() : null,
+  }
+}
+
+/** Map a partial loose Task update to Firestore fields; returns null when nothing valid should be sent yet. */
 export function taskPatchToCloud(patch: Partial<Task>, serverTs: () => FieldValue): UpdateData<DocumentData> | null {
   const out: UpdateData<DocumentData> = {}
   if (patch.title !== undefined) {
@@ -123,6 +211,36 @@ export function taskPatchToCloud(patch: Partial<Task>, serverTs: () => FieldValu
   if (patch.rems !== undefined) out.rems = patch.rems.filter(k => VALID_REMS.includes(k))
   if (patch.guide !== undefined) out.guide = patch.guide
   if (!Object.keys(out).length) return null
+  out.updatedAt = serverTs()
+  return out
+}
+
+/** Map a partial project Task update to Firestore fields; enforces updatedBy and strips loose-only fields. */
+export function projectTaskPatchToCloud(
+  patch: Partial<Task>,
+  actorUid: string,
+  serverTs: () => FieldValue,
+): UpdateData<DocumentData> | null {
+  const out: UpdateData<DocumentData> = {}
+  if (patch.title !== undefined) {
+    const trimmed = patch.title.trim().slice(0, 300)
+    if (trimmed) out.title = trimmed
+  }
+  if (patch.section !== undefined) out.section = patch.section
+  if (patch.assignee !== undefined) out.assignee = patch.assignee
+  if (patch.status !== undefined) {
+    out.status = patch.status
+    out.completedAt = patch.status === 'done' ? serverTs() : null
+  }
+  if (patch.prio !== undefined) out.prio = patch.prio
+  if (patch.start !== undefined) out.start = patch.start
+  if (patch.due !== undefined) out.due = patch.due
+  if (patch.time !== undefined) out.time = patch.time
+  if (patch.dur !== undefined) out.dur = patch.dur
+  if (patch.rec !== undefined) out.rec = patch.rec
+  if (patch.notes !== undefined) out.notes = patch.notes.slice(0, 10000)
+  if (!Object.keys(out).length) return null
+  out.updatedBy = actorUid
   out.updatedAt = serverTs()
   return out
 }

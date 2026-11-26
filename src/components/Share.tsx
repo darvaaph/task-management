@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FREE_MEMBER_QUOTA, PEOPLE, PRO_MEMBER_QUOTA } from '../lib/constants'
+import { FREE_MEMBER_QUOTA, PRO_MEMBER_QUOTA } from '../lib/constants'
 import { agoLabel, fmt } from '../lib/dates'
 import type { Project } from '../lib/types'
 import { useStore } from '../store'
@@ -13,14 +13,16 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
   const close = () => s.setUI({ overlay: null })
   const [preview, setPreview] = useState(false)
 
-  const limit = s.isPro ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
+  const pro = s.isProFor(P)
+  const owner = s.isOwner(P)
+  const limit = pro ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
   const n = P.members.length
   const full = n >= limit
   const tok = P.inviteToken || ('x7' + P.id.slice(0, 3)).padEnd(5, 'q')
   const link = `taskflow.id/invite/${tok}`
   const acts = s.activity.filter(a => a.p === P.id).slice(0, 8)
   const capColor = full ? 'var(--high)' : 'var(--accent)'
-  const planTag = s.isPro ? (s.account.demo ? 'Demo' : 'Pro') : 'Gratis'
+  const planTag = s.account.demo ? 'Demo' : pro ? 'Pro' : 'Gratis'
   // The owner's area is private (PRD 5.4): the friend picks one of their own after joining.
   const inviteMeta = `${n} anggota · tenggat ${fmt(P.due)}`
 
@@ -56,7 +58,7 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
         </div>
         <div className="flex items-center gap-5 text-[12.5px] text-fg3">
           <span className="flex-1 leading-[1.45]">Siapa pun yang punya tautan ini bisa bergabung selama kuota masih ada.</span>
-          <button type="button" onClick={() => s.resetInviteToken(P.id)} className={`whitespace-nowrap border-0 bg-transparent px-2 text-[12.5px] font-medium text-fg2 hover:text-fg ${mobile ? 'min-h-18' : 'py-2'}`}>Reset tautan</button>
+          {owner && <button type="button" onClick={() => s.resetInviteToken(P.id)} className={`whitespace-nowrap border-0 bg-transparent px-2 text-[12.5px] font-medium text-fg2 hover:text-fg ${mobile ? 'min-h-18' : 'py-2'}`}>Reset tautan</button>}
         </div>
       </section>
 
@@ -70,19 +72,16 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
         </div>
         <div className="flex flex-col">
           {P.members.map(id => {
-            const p = PEOPLE[id]
-            if (!p) return null
-            const owner = id === 'me'
-            const name = owner ? s.account.name : p.name
-            const init = owner ? (s.account.name.trim()[0] || 'A').toUpperCase() : p.i
+            const p = s.personOf(id, P.id)
+            const isProjOwner = id === (P.ownerId ?? s.selfId)
             return (
               <div key={id} className="flex min-h-22 items-center gap-5">
-                <Avatar i={init} c={p.c} size={30} />
+                <Avatar i={p.i} c={p.c} size={30} />
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-[14px] font-medium text-fg">{name}</span>
-                  <span className="text-[12px] text-fg3">{owner ? 'Pemilik' : 'Anggota'}</span>
+                  <span className="truncate text-[14px] font-medium text-fg">{p.name}</span>
+                  <span className="text-[12px] text-fg3">{isProjOwner ? 'Pemilik' : 'Anggota'}</span>
                 </div>
-                {!owner && (
+                {owner && !isProjOwner && (
                   <button type="button" onClick={() => s.removeMember(P.id, id)} className={`${actionH} rounded-[8px] border border-line2 bg-transparent px-5 text-[12.5px] font-medium text-high`}>Keluarkan</button>
                 )}
               </div>
@@ -92,9 +91,9 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
         {full && (
           <div className="flex items-center gap-5 rounded-md bg-surface2 px-6 py-5 text-[13px] leading-[1.45] text-fg">
             <span className="flex-1">
-              {s.isPro ? `Proyek sudah mencapai ${PRO_MEMBER_QUOTA} anggota.` : `Proyek penuh. Paket Gratis maksimal ${FREE_MEMBER_QUOTA} anggota termasuk Anda. Pro menaikkan batas ke ${PRO_MEMBER_QUOTA}.`}
+              {pro ? `Proyek sudah mencapai ${PRO_MEMBER_QUOTA} anggota.` : `Proyek penuh. Paket Gratis maksimal ${FREE_MEMBER_QUOTA} anggota termasuk pemiliknya. Pro menaikkan batas ke ${PRO_MEMBER_QUOTA}.`}
             </span>
-            {!s.isPro && (
+            {!pro && owner && (
               <button type="button" onClick={() => s.openPro('share')} className={`${actionH} whitespace-nowrap rounded-[8px] border-0 bg-accent px-6 text-[12.5px] font-semibold text-on-accent`}>Lihat Pro</button>
             )}
           </div>
@@ -139,10 +138,10 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
           <span className="text-label text-fg3">RIWAYAT AKTIVITAS</span>
           <ProBadge />
         </div>
-        {!s.isPro ? (
+        {!pro ? (
           <div className="flex items-center gap-5 rounded-md bg-surface2 px-6 py-5 text-[13px] text-fg2">
             <span className="flex-1 leading-[1.45]">Lihat siapa menambah, memindah, dan menyelesaikan tugas.</span>
-            <button type="button" onClick={() => s.openPro('share')} className={`whitespace-nowrap border-0 bg-transparent px-2 text-[12.5px] font-semibold text-accent ${mobile ? 'min-h-18' : ''}`}>Lihat Pro</button>
+            {owner && <button type="button" onClick={() => s.openPro('share')} className={`whitespace-nowrap border-0 bg-transparent px-2 text-[12.5px] font-semibold text-accent ${mobile ? 'min-h-18' : ''}`}>Lihat Pro</button>}
           </div>
         ) : acts.length > 0 ? (
           <div className="flex flex-col">

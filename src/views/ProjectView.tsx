@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { InlineComposer } from '../components/Composer'
 import { TaskRow } from '../components/TaskRow'
 import { Avatar, EmptyCard, PrioBadge, ProgressBar, Segmented } from '../components/ui'
-import { PEOPLE, STATUS, STATUS_DOT, STATUS_KEYS } from '../lib/constants'
+import { STATUS, STATUS_DOT, STATUS_KEYS } from '../lib/constants'
 import { fmt, rel } from '../lib/dates'
 import { areaOf, byOpen, isOverdue, projectProgress } from '../lib/logic'
 import type { Status, Task } from '../lib/types'
@@ -44,13 +44,18 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
   )
   const members = (
     <div className="flex pl-3">
-      {P.members.map(m => <span key={m} className="-ml-3"><Avatar i={PEOPLE[m].i} c={PEOPLE[m].c} size={28} ring="var(--bg)" /></span>)}
+      {P.members.map(m => {
+        const person = s.personOf(m, P.id)
+        return <span key={m} className="-ml-3"><Avatar i={person.i} c={person.c} size={28} ring="var(--bg)" /></span>
+      })}
     </div>
   )
+  const owner = s.isOwner(P)
+  const canTimeline = s.isProFor(P)
   const archivedBanner = P.archived && (
     <div className="flex max-w-[780px] items-center gap-5 rounded-md bg-surface2 py-5 pr-5 pl-7 text-[13px] text-fg2">
-      <span className="flex-1">Proyek ini diarsipkan dan tidak dihitung dalam kuota.</span>
-      <button type="button" onClick={() => s.restoreProject(P)} className="h-16 rounded-[8px] border-0 bg-fg px-6 text-[12.5px] font-semibold text-bg">Kembalikan</button>
+      <span className="flex-1">{owner ? 'Proyek ini diarsipkan dan tidak dihitung dalam kuota.' : 'Proyek ini diarsipkan oleh pemiliknya.'}</span>
+      {owner && <button type="button" onClick={() => void s.restoreProject(P)} className="h-16 rounded-[8px] border-0 bg-fg px-6 text-[12.5px] font-semibold text-bg">Kembalikan</button>}
     </div>
   )
 
@@ -74,7 +79,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
           {sw}
         </div>
         {empty}
-        {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} mobile /> : s.isPro ? <Timeline mobile projectId={P.id} /> : <div className="px-6"><ProLocked ctx="tl" /></div>}
+        {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} mobile /> : canTimeline ? <Timeline mobile projectId={P.id} /> : <div className="px-6"><ProLocked ctx="tl" /></div>}
       </div>
     )
   }
@@ -105,7 +110,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
       </div>
       <div className="max-w-[780px]"><InlineComposer placeholder="Tambah tugas ke proyek ini…" /></div>
       {mode === 'list' && empty}
-      {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} /> : s.isPro ? <Timeline projectId={P.id} /> : <ProLocked ctx="tl" />}
+      {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} /> : canTimeline ? <Timeline projectId={P.id} /> : <ProLocked ctx="tl" />}
     </div>
   )
 }
@@ -155,7 +160,7 @@ function BoardCard({ t, mobile, onDragStart, onDragEnd }: { t: Task; mobile?: bo
   const od = isOverdue(t)
   const [next, label] = NEXT[t.status]
   const proj = s.projects.find(p => p.id === t.project)
-  const who = proj && proj.members.length > 1 && t.assignee ? PEOPLE[t.assignee] : null
+  const who = proj && proj.members.length > 1 && t.assignee ? s.personOf(t.assignee, proj.id) : null
   return (
     <div
       draggable={!mobile}

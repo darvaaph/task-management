@@ -1,5 +1,5 @@
 import { PEOPLE } from './constants'
-import type { Person } from './types'
+import type { Person, Project, ProjectMember } from './types'
 
 /** Reuse only the existing avatar colours from PEOPLE (never add new palette colours). */
 export const PEOPLE_COLORS = Object.values(PEOPLE).map(p => p.c)
@@ -21,7 +21,8 @@ export function resolvePerson(
     selfId: string
     selfName: string
     demo: boolean
-    members?: Record<string, Person>
+    membersByProject: Record<string, Record<string, ProjectMember>>
+    projectId?: string
   },
 ): Person {
   if (id === opts.selfId || id === 'me') {
@@ -29,7 +30,31 @@ export function resolvePerson(
     return { name, i: (name[0] || 'A').toUpperCase(), c: PEOPLE.me.c }
   }
   if (opts.demo && PEOPLE[id]) return PEOPLE[id]
-  if (opts.members?.[id]) return opts.members[id]
+
+  const fromProject = opts.projectId ? opts.membersByProject[opts.projectId]?.[id] : undefined
+  if (fromProject) {
+    return { name: fromProject.name, i: initialOf(fromProject.name), c: personColorForUid(id) }
+  }
+
+  for (const map of Object.values(opts.membersByProject)) {
+    const found = map[id]
+    if (found) return { name: found.name, i: initialOf(found.name), c: personColorForUid(id) }
+  }
+
   if (PEOPLE[id]) return PEOPLE[id]
   return { name: 'Anggota', i: '?', c: personColorForUid(id) }
+}
+
+/**
+ * Inside a shared project, Pro features (duration, weekdays/monthly repeat, multiple reminders,
+ * project Timeline, activity history) follow the project owner's plan, not the current user's plan.
+ */
+export function isProForProject(
+  project: Pick<Project, 'ownerPlan'> | null | undefined,
+  accountIsPro: boolean,
+  demo: boolean,
+): boolean {
+  if (demo) return true
+  if (project?.ownerPlan) return project.ownerPlan === 'pro'
+  return accountIsPro
 }

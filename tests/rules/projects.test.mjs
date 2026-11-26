@@ -833,6 +833,21 @@ describe('Serangan 10 & 11 — Validasi updatedBy, assignee, dan fitur Pro mengi
         keys: ['m10', 'h1', 'd1'],
       }),
     )
+
+    // Atomic move batch: create project task and its reminder in the same writeBatch.
+    const moveBatch = freeMemberInProProj.batch()
+    moveBatch.set(
+      freeMemberInProProj.doc('projects/proj-pro/tasks/t-moved-with-rem'),
+      makeProjectTask({
+        project: 'proj-pro',
+        createdBy: FREE_MEMBER,
+      }),
+    )
+    moveBatch.set(freeMemberInProProj.doc(`users/${FREE_MEMBER}/reminders/t-moved-with-rem`), {
+      projectId: 'proj-pro',
+      keys: ['m10', 'm30'],
+    })
+    await assertSucceeds(moveBatch.commit())
   })
 })
 

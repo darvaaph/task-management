@@ -324,7 +324,7 @@ service cloud.firestore {
         && r['keys'].hasOnly(['m10', 'm30', 'h1', 'd0', 'd1', 'd3'])
         && (r.get('updatedAt', null) == null || r.updatedAt is timestamp)
         && projectExists(pid)
-        && exists(/databases/$(database)/documents/projects/$(pid)/tasks/$(taskId))
+        && existsAfter(/databases/$(database)/documents/projects/$(pid)/tasks/$(taskId))
         && validProjectReminderPlan(uid, pid, r['keys'].size());
     }
 

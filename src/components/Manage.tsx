@@ -33,6 +33,7 @@ export function ManageProject({ project: P, mobile }: { project: Project; mobile
   const [confirm, setConfirm] = useState(false)
   const close = () => s.setUI({ overlay: null })
   const pt = s.tasks.filter(t => t.project === P.id)
+  const owner = s.isOwner(P)
   const addSec = () => {
     const n = newSec.trim()
     if (!n || P.sections.includes(n)) return
@@ -43,58 +44,68 @@ export function ManageProject({ project: P, mobile }: { project: Project; mobile
 
   return (
     <Frame mobile={mobile} label="Kelola proyek" onClose={close} width={480}>
-      <Header title="Kelola proyek" onDone={close} note="Perubahan langsung tersimpan." />
-      <label className="flex flex-col gap-4">
-        <span className={lbl}>NAMA</span>
-        <input value={P.name} onChange={e => s.updateProject(P.id, { name: e.target.value })} aria-label="Nama proyek" className={`${mobile ? 'h-24' : 'h-21'} rounded-md border border-line2 bg-bg px-7 text-[15px] font-medium text-fg outline-none`} />
-      </label>
+      <Header
+        title="Kelola proyek"
+        onDone={close}
+        note={owner ? 'Perubahan langsung tersimpan.' : 'Area ini hanya berlaku di akunmu. Pengaturan lain dikelola pemilik proyek.'}
+      />
+      {owner && (
+        <label className="flex flex-col gap-4">
+          <span className={lbl}>NAMA</span>
+          <input value={P.name} onChange={e => s.updateProject(P.id, { name: e.target.value })} onBlur={s.flushWrites} aria-label="Nama proyek" className={`${mobile ? 'h-24' : 'h-21'} rounded-md border border-line2 bg-bg px-7 text-[15px] font-medium text-fg outline-none`} />
+        </label>
+      )}
       <div className="flex flex-col gap-4">
         <span className={lbl}>AREA</span>
         <div className="flex flex-wrap gap-3">
           {[...s.areas.map(a => ({ id: a.id as string | null, name: a.name, color: a.color })), { id: null, name: 'Tanpa area', color: 'var(--fg3)' }].map(a => (
-            <Chip key={a.id ?? 'none'} size="lg" dot={a.color} active={(P.area ?? null) === a.id} onClick={() => s.updateProject(P.id, { area: a.id, color: a.id ? a.color : P.color })}>{a.name}</Chip>
+            <Chip key={a.id ?? 'none'} size="lg" dot={a.color} active={(P.area ?? null) === a.id} onClick={() => s.updateProject(P.id, owner ? { area: a.id, color: a.id ? a.color : P.color } : { area: a.id })}>{a.name}</Chip>
           ))}
         </div>
       </div>
-      <div className="flex flex-wrap gap-6">
-        <label className="flex flex-col gap-4">
-          <span className={lbl}>MULAI</span>
-          <input type="date" value={P.start} onChange={e => { const v = e.target.value; if (v) s.updateProject(P.id, { start: v, due: v > P.due ? v : P.due }) }} aria-label="Tanggal mulai" className={dateInput} />
-        </label>
-        <label className="flex flex-col gap-4">
-          <span className={lbl}>TENGGAT</span>
-          <input type="date" value={P.due} onChange={e => { const v = e.target.value; if (v) s.updateProject(P.id, { due: v, start: v < P.start ? v : P.start }) }} aria-label="Tanggal tenggat" className={dateInput} />
-        </label>
-      </div>
-      <div className="flex flex-col gap-3">
-        <span className={lbl}>BAGIAN</span>
-        {P.sections.map(sc => (
-          <SectionRow key={sc} name={sc} count={pt.filter(t => t.section === sc).length} h={h} onRename={n => s.renameSection(P.id, sc, n)} onDelete={() => s.deleteSection(P.id, sc)} />
-        ))}
-        {!P.sections.length && <span className="text-[12.5px] text-fg3">Belum ada bagian. Tugas ditampilkan dalam satu daftar.</span>}
-        <div className="flex gap-3">
-          <input value={newSec} onChange={e => setNewSec(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSec()} placeholder="Bagian baru, misalnya Revisi" aria-label="Nama bagian baru" className={`min-w-0 flex-1 ${h} rounded-[8px] border border-dashed border-line2 bg-transparent px-5 text-[14px] text-fg outline-none`} />
-          <button type="button" onClick={addSec} className={`${h} rounded-[8px] border border-line2 bg-transparent px-6 text-[13px] font-medium text-fg`}>Tambah</button>
-        </div>
-      </div>
-      <div className="flex flex-col gap-4 border-t border-line pt-7">
-        <button type="button" onClick={() => (P.archived ? s.restoreProject(P) : s.archiveProject(P))} className="h-21 rounded-md border border-line2 bg-transparent text-[14px] font-medium text-fg">
-          {P.archived ? 'Kembalikan dari arsip' : 'Arsipkan proyek'}
-        </button>
-        {!confirm ? (
-          <button type="button" onClick={() => setConfirm(true)} className="h-21 w-full rounded-md border border-line2 bg-transparent text-[14px] font-medium text-high">Hapus proyek</button>
-        ) : (
-          <div role="alert" className="flex flex-col gap-4 rounded-md bg-high-soft p-6">
-            <span className="text-[13px] leading-[1.45] text-fg">
-              {pt.length ? `Hapus "${P.name}" beserta ${pt.length} tugasnya?` : `Hapus "${P.name}"?`} Anda masih bisa mengurungkannya beberapa detik setelah ini.
-            </span>
-            <div className="flex gap-4">
-              <button type="button" onClick={() => setConfirm(false)} className="h-19 flex-1 rounded-[8px] border border-line2 bg-surface text-[13px] font-medium text-fg">Batal</button>
-              <button type="button" onClick={() => s.deleteProject(P)} className="h-19 flex-1 rounded-[8px] border-0 bg-high text-[13px] font-semibold text-white">Ya, hapus</button>
+      {owner && (
+        <>
+          <div className="flex flex-wrap gap-6">
+            <label className="flex flex-col gap-4">
+              <span className={lbl}>MULAI</span>
+              <input type="date" value={P.start} onChange={e => { const v = e.target.value; if (v) s.updateProject(P.id, { start: v, due: v > P.due ? v : P.due }) }} aria-label="Tanggal mulai" className={dateInput} />
+            </label>
+            <label className="flex flex-col gap-4">
+              <span className={lbl}>TENGGAT</span>
+              <input type="date" value={P.due} onChange={e => { const v = e.target.value; if (v) s.updateProject(P.id, { due: v, start: v < P.start ? v : P.start }) }} aria-label="Tanggal tenggat" className={dateInput} />
+            </label>
+          </div>
+          <div className="flex flex-col gap-3">
+            <span className={lbl}>BAGIAN</span>
+            {P.sections.map(sc => (
+              <SectionRow key={sc} name={sc} count={pt.filter(t => t.section === sc).length} h={h} onRename={n => s.renameSection(P.id, sc, n)} onDelete={() => s.deleteSection(P.id, sc)} />
+            ))}
+            {!P.sections.length && <span className="text-[12.5px] text-fg3">Belum ada bagian. Tugas ditampilkan dalam satu daftar.</span>}
+            <div className="flex gap-3">
+              <input value={newSec} onChange={e => setNewSec(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSec()} placeholder="Bagian baru, misalnya Revisi" aria-label="Nama bagian baru" className={`min-w-0 flex-1 ${h} rounded-[8px] border border-dashed border-line2 bg-transparent px-5 text-[14px] text-fg outline-none`} />
+              <button type="button" onClick={addSec} className={`${h} rounded-[8px] border border-line2 bg-transparent px-6 text-[13px] font-medium text-fg`}>Tambah</button>
             </div>
           </div>
-        )}
-      </div>
+          <div className="flex flex-col gap-4 border-t border-line pt-7">
+            <button type="button" onClick={() => (P.archived ? void s.restoreProject(P) : s.archiveProject(P))} className="h-21 rounded-md border border-line2 bg-transparent text-[14px] font-medium text-fg">
+              {P.archived ? 'Kembalikan dari arsip' : 'Arsipkan proyek'}
+            </button>
+            {!confirm ? (
+              <button type="button" onClick={() => setConfirm(true)} className="h-21 w-full rounded-md border border-line2 bg-transparent text-[14px] font-medium text-high">Hapus proyek</button>
+            ) : (
+              <div role="alert" className="flex flex-col gap-4 rounded-md bg-high-soft p-6">
+                <span className="text-[13px] leading-[1.45] text-fg">
+                  {pt.length ? `Hapus "${P.name}" beserta ${pt.length} tugasnya?` : `Hapus "${P.name}"?`} Anda masih bisa mengurungkannya beberapa detik setelah ini.
+                </span>
+                <div className="flex gap-4">
+                  <button type="button" onClick={() => setConfirm(false)} className="h-19 flex-1 rounded-[8px] border border-line2 bg-surface text-[13px] font-medium text-fg">Batal</button>
+                  <button type="button" onClick={() => s.deleteProject(P)} className="h-19 flex-1 rounded-[8px] border-0 bg-high text-[13px] font-semibold text-white">Ya, hapus</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </Frame>
   )
 }

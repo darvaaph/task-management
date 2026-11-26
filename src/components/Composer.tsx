@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { PEOPLE } from '../lib/constants'
 import { fmt, rel, today, addDays } from '../lib/dates'
 import { destInfo, parseDest, type Dest } from '../lib/logic'
 import type { ISODate, Priority } from '../lib/types'
@@ -33,7 +32,7 @@ function useComposer(onDone?: () => void) {
   const dp = parseDest(curDest)
   const proj = dp.project ? s.projects.find(p => p.id === dp.project) : undefined
   const pics = proj && proj.members.length > 1 ? proj.members : null
-  const curPic = pics && pic && pics.includes(pic) ? pic : 'me'
+  const curPic = pics && pic && pics.includes(pic) ? pic : s.selfId
 
   const dues: [string, ISODate | null][] = [['Hari ini', today()], ['Besok', addDays(today(), 1)]]
   if (s.ui.view === 'jadwal' && !dues.some(([, d]) => d === s.ui.calDay)) dues.push([fmt(s.ui.calDay), s.ui.calDay])
@@ -50,7 +49,7 @@ function useComposer(onDone?: () => void) {
     onDone?.()
   }
 
-  return { title, setTitle, curDest, setDest, curDue, setDue, prio, setPrio, pics, curPic, setPic, picking, setPicking, dues, submit }
+  return { title, setTitle, curDest, setDest, curDue, setDue, prio, setPrio, projId: proj?.id, pics, curPic, setPic, picking, setPicking, dues, submit }
 }
 
 const Divider = () => <span aria-hidden="true" className="mx-1 h-9 w-px bg-line2" />
@@ -83,7 +82,7 @@ export function InlineComposer({ placeholder }: { placeholder: string }) {
           <>
             <Divider />
             <span className="text-[12.5px] text-fg3">PIC</span>
-            {c.pics.map(k => <PicChip key={k} id={k} active={c.curPic === k} onClick={() => c.setPic(k)} />)}
+            {c.pics.map(k => <PicChip key={k} id={k} projectId={c.projId} active={c.curPic === k} onClick={() => c.setPic(k)} />)}
           </>
         )}
       </div>
@@ -92,8 +91,9 @@ export function InlineComposer({ placeholder }: { placeholder: string }) {
   )
 }
 
-function PicChip({ id, active, onClick, big }: { id: string; active: boolean; onClick: () => void; big?: boolean }) {
-  const p = PEOPLE[id]
+function PicChip({ id, projectId, active, onClick, big }: { id: string; projectId?: string; active: boolean; onClick: () => void; big?: boolean }) {
+  const s = useStore()
+  const p = s.personOf(id, projectId)
   return (
     <button
       type="button"
@@ -137,7 +137,7 @@ export function QuickSheet({ onClose }: { onClose: () => void }) {
       {c.pics && (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-[12.5px] text-fg3">PIC</span>
-          {c.pics.map(k => <PicChip big key={k} id={k} active={c.curPic === k} onClick={() => c.setPic(k)} />)}
+          {c.pics.map(k => <PicChip big key={k} id={k} projectId={c.projId} active={c.curPic === k} onClick={() => c.setPic(k)} />)}
         </div>
       )}
       <button type="button" onClick={c.submit} className="h-25 rounded-[12px] border-0 bg-fg text-[15px] font-semibold text-bg">Simpan tugas</button>

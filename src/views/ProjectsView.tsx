@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Avatar, Chip, EmptyCard, Modal, ProgressBar, Segmented, Sheet, btnPrimary } from '../components/ui'
-import { FREE_PROJECT_QUOTA, PEOPLE } from '../lib/constants'
+import { FREE_PROJECT_QUOTA } from '../lib/constants'
 import { addDays, fmt, today } from '../lib/dates'
 import { areaOf, daysLeftLabel, projectProgress } from '../lib/logic'
 import type { ISODate, Project } from '../lib/types'
@@ -10,7 +10,7 @@ export function ProjectsView({ mobile }: { mobile: boolean }) {
   const s = useStore()
   const [np, setNp] = useState(false)
   const { projArea: area, archives } = s.ui
-  const owned = s.projects.filter(p => !p.archived).length
+  const owned = s.projects.filter(p => !p.archived && s.isOwner(p)).length
   const cards = s.projects.filter(p => p.archived === archives && (area === 'all' || p.area === area))
   const chips: [string, string, string][] = [['all', 'Semua', 'var(--fg3)'], ...s.areas.map(a => [a.id, a.name, a.color] as [string, string, string])]
   const quota = s.isPro ? `${owned} proyek aktif · ${s.account.demo ? 'Demo' : 'Pro'}` : `${owned}/${FREE_PROJECT_QUOTA} proyek aktif · Gratis`
@@ -80,7 +80,10 @@ function ProjectCard({ p, mobile }: { p: Project; mobile: boolean }) {
   const open = () => s.go('project', { projectId: p.id })
   const avatars = (
     <div className="flex pl-3">
-      {p.members.map(m => <span key={m} className="-ml-3"><Avatar i={PEOPLE[m].i} c={PEOPLE[m].c} size={mobile ? 22 : 24} ring="var(--surface)" /></span>)}
+      {p.members.map(m => {
+        const person = s.personOf(m, p.id)
+        return <span key={m} className="-ml-3"><Avatar i={person.i} c={person.c} size={mobile ? 22 : 24} ring="var(--surface)" /></span>
+      })}
     </div>
   )
   if (mobile) {
@@ -128,14 +131,17 @@ function NewProject({ mobile, onClose }: { mobile: boolean; onClose: () => void 
   const [name, setName] = useState('')
   const [area, setArea] = useState<string>(s.ui.projArea !== 'all' ? s.ui.projArea : s.areas[0]?.id ?? '')
   const [due, setDue] = useState<ISODate>(() => addDays(today(), 14))
-  const owned = s.projects.filter(p => !p.archived).length
+  const [busy, setBusy] = useState(false)
+  const owned = s.projects.filter(p => !p.archived && s.isOwner(p)).length
   const full = !s.isPro && owned >= FREE_PROJECT_QUOTA
-  const ok = !full && name.trim().length > 0
-  const submit = () => {
+  const ok = !full && !busy && name.trim().length > 0
+  const submit = async () => {
     if (full) { onClose(); s.openPro('proj'); return }
     if (!ok) return
-    s.createProject(name.trim(), area || null, due)
-    onClose()
+    setBusy(true)
+    const created = await s.createProject(name.trim(), area || null, due)
+    setBusy(false)
+    if (created) onClose()
   }
   const lbl = 'text-label text-fg3'
   const t0 = today()
@@ -171,8 +177,8 @@ function NewProject({ mobile, onClose }: { mobile: boolean; onClose: () => void 
         {full ? `Kuota ${FREE_PROJECT_QUOTA} proyek aktif penuh. Arsipkan proyek lain, atau buka batasnya dengan Pro.` : s.isPro ? 'Proyek aktif tanpa batas.' : `${owned} dari ${FREE_PROJECT_QUOTA} slot proyek aktif terpakai.`}
       </div>
       <div className="flex gap-4">
-        <button type="button" onClick={onClose} className="h-21 rounded-md border border-line2 bg-transparent px-8 text-[14px] font-medium text-fg">Batal</button>
-        <button type="button" onClick={submit} disabled={!ok && !full} className="h-21 flex-1 rounded-md border-0 bg-fg text-[14px] font-semibold text-bg disabled:opacity-40">{full ? 'Kuota penuh · Lihat Pro' : 'Buat proyek'}</button>
+        <button type="button" onClick={onClose} disabled={busy} className="h-21 rounded-md border border-line2 bg-transparent px-8 text-[14px] font-medium text-fg disabled:opacity-40">Batal</button>
+        <button type="button" onClick={() => void submit()} disabled={!ok && !full} className="h-21 flex-1 rounded-md border-0 bg-fg text-[14px] font-semibold text-bg disabled:opacity-40">{busy ? 'Membuat…' : full ? 'Kuota penuh · Lihat Pro' : 'Buat proyek'}</button>
       </div>
     </>
   )

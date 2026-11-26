@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { PEOPLE, PRIO, STATUS, STATUS_KEYS } from '../lib/constants'
+import { PRIO, STATUS, STATUS_KEYS } from '../lib/constants'
 import { addDays, diffDays, fmt, fmtDay, nextMonday, today } from '../lib/dates'
 import { destInfo, destOfTask, remindersOf } from '../lib/logic'
 import type { Recurrence, Task } from '../lib/types'
@@ -78,7 +78,7 @@ function Pics({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
   return (
     <div className="flex flex-wrap gap-3">
       {d.proj.members.map(k => {
-        const p = PEOPLE[k]
+        const p = d.s.personOf(k, d.proj!.id)
         const on = d.t.assignee === k
         return (
           <button key={k} type="button" aria-pressed={on} onClick={() => d.upd({ assignee: k })} className={`flex items-center gap-3 rounded-pill border pr-4.5 pl-1.5 font-medium text-fg ${big ? 'h-19 text-[13px]' : 'py-1.5 text-[12px]'} ${on ? 'border-accent bg-accent-soft' : 'border-line2 bg-transparent'}`}>
@@ -181,10 +181,11 @@ function LockChip({ active, locked, onClick, children, big }: { active: boolean;
 function Duration({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
   // Length only shows as a time range and a block height, both anchored on the start time.
   if (!d.t.time) return <span className="text-[13px] text-fg3">Atur jam dulu untuk memasang durasi.</span>
+  const proOk = d.proj ? d.s.isProFor(d.proj) : d.s.isPro
   return (
     <div className="flex flex-wrap gap-2.5">
       {DURS.map(([v, l]) => {
-        const locked = !d.s.isPro && v != null
+        const locked = !proOk && v != null
         return <LockChip key={l} big={big} active={(d.t.dur ?? null) === v} locked={locked} onClick={() => (locked ? d.s.openPro('dur') : d.upd({ dur: v }))}>{l}</LockChip>
       })}
     </div>
@@ -192,10 +193,11 @@ function Duration({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }
 }
 
 function Repeat({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
+  const proOk = d.proj ? d.s.isProFor(d.proj) : d.s.isPro
   return (
     <div className="flex flex-wrap gap-2.5">
       {RECS.map(([v, l, pro]) => {
-        const locked = pro && !d.s.isPro
+        const locked = pro && !proOk
         // Turning repeat on for an undated task dates it today.
         return <LockChip key={l} big={big} active={(d.t.rec ?? null) === v} locked={locked} onClick={() => (locked ? d.s.openPro('rec') : d.upd({ rec: v, due: v && !d.t.due ? today() : d.t.due }))}>{l}</LockChip>
       })}
@@ -207,16 +209,17 @@ function Repeat({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) 
 function Reminders({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
   if (!d.t.due) return <span className="text-[13px] text-fg3">Atur tanggal dulu untuk memasang pengingat.</span>
   const cur = remindersOf(d.t)
+  const proOk = d.proj ? d.s.isProFor(d.proj) : d.s.isPro
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2.5">
         {(d.t.time ? REM_TIMED : REM_DAY).map(([k, l]) => {
           const on = cur.includes(k)
-          return <LockChip key={k} big={big} active={on} onClick={() => d.upd({ rems: on ? cur.filter(x => x !== k) : d.s.isPro ? [...cur, k] : [k] })}>{l}</LockChip>
+          return <LockChip key={k} big={big} active={on} onClick={() => d.upd({ rems: on ? cur.filter(x => x !== k) : proOk ? [...cur, k] : [k] })}>{l}</LockChip>
         })}
       </div>
       <p className="m-0 text-[12px] leading-normal text-fg3">
-        {d.s.isPro ? 'Bisa pilih lebih dari satu.' : <>Gratis: 1 pengingat per tugas. Lebih dari satu di <button type="button" onClick={() => d.s.openPro('rem')} aria-label="Lihat TaskFlow Pro" className="inline-flex border-0 bg-transparent p-0 align-middle"><ProBadge /></button></>}
+        {proOk ? 'Bisa pilih lebih dari satu.' : <>Gratis: 1 pengingat per tugas. Lebih dari satu di <button type="button" onClick={() => d.s.openPro('rem')} aria-label="Lihat TaskFlow Pro" className="inline-flex border-0 bg-transparent p-0 align-middle"><ProBadge /></button></>}
       </p>
       {cur.length > 0 && <NotifyHint />}
     </div>
@@ -335,7 +338,7 @@ export function DetailSheet({ task }: { task: Task }) {
   const [fold, setFold] = useState<Fold | null>(null)
   const toggle = (k: Fold) => setFold(f => (f === k ? null : k))
   const cur = destOfTask(t)
-  const who = t.assignee ? PEOPLE[t.assignee]?.name : null
+  const who = t.assignee ? d.s.personOf(t.assignee, t.project ?? undefined).name : null
   return (
     <Sheet onClose={d.close} label="Detail tugas">
       <div className="flex items-start gap-5">

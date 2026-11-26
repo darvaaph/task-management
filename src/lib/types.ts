@@ -22,6 +22,18 @@ export interface Project {
   archived: boolean
   /** Custom invite link token created by Reset tautan; falls back to a deterministic token when omitted. */
   inviteToken?: string
+  /** Cloud-only ownership & plan metadata; omitted in Demo/local mode. */
+  ownerId?: string
+  ownerPlan?: 'free' | 'pro'
+  memberCount?: number
+}
+
+export interface ProjectMember {
+  uid: string
+  role: 'owner' | 'member'
+  area: string | null
+  name: string
+  photoURL: string | null
 }
 
 export interface Task {

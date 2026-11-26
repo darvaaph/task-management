@@ -7,9 +7,15 @@ import { guideTasks, seed } from './lib/seed'
 import { feedback } from './lib/feedback'
 import {
   BATCH_LIMIT,
+  VALID_REMS,
   authErrMsg,
+  docToProject,
   docToTask,
+  docsToActivity,
   docsToAreas,
+  docsToMembers,
+  projectTaskPatchToCloud,
+  projectTaskToCloudDoc,
   safeDocId,
   sortCloudTasks,
   taskPatchToCloud,
@@ -35,8 +41,9 @@ import {
   type UI,
   type View,
 } from './lib/localStore'
+import { isProForProject, resolvePerson } from './lib/people'
 import { WriteQueue } from './lib/writeQueue'
-import type { Activity, Area, Data, ISODate, Priority, Project, Task } from './lib/types'
+import type { Activity, Area, Data, ISODate, Person, Priority, Project, ProjectMember, Task } from './lib/types'
 
 export type { Accent, Account, LocalMigration, ProCtx, Theme, UI, View }
 
@@ -56,15 +63,46 @@ const pushActivity = (list: Activity[], p: string, text: string): Activity[] =>
 const statusActivity = (actor: string, title: string, status: Task['status']) =>
   status === 'done' ? `${actor} menyelesaikan "${title}"` : `${actor} memindah "${title}" ke ${STATUS[status]}`
 
+/** Generate a 24-char URL-safe random token (>= 20 chars required by Firestore Rules). */
+function randomInviteToken(): string {
+  const bytes = new Uint8Array(18)
+  crypto.getRandomValues(bytes)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function fnErrMsg(err: unknown, fallback: string): string {
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message: unknown }).message === 'string') {
+    const msg = (err as { message: string }).message.trim()
+    if (msg && !/^internal$/i.test(msg)) return msg
+  }
+  return fallback
+}
+
+function fnErrCode(err: unknown): string {
+  return err && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : ''
+}
+
 function useStoreValue() {
   const initial = useMemo(loadLocalStore, [])
-  // Local store: used in Demo/signed-out mode, and holds Phase-1 local projects, project tasks, and activity when signed in.
+  // Local store: used in Demo/signed-out mode, and keeps pre-2F local projects safely stashed per uid.
   const [localData, setLocalData] = useState<Data>(initial.data)
   const [cloudAreas, setCloudAreas] = useState<Area[]>([])
   const [cloudTasks, setCloudTasks] = useState<Task[]>([])
+  const [cloudActiveProjects, setCloudActiveProjects] = useState<Project[]>([])
+  const [cloudArchivedProjects, setCloudArchivedProjects] = useState<Project[]>([])
+  const [cloudProjectTasks, setCloudProjectTasks] = useState<Record<string, Task[]>>({})
+  const [cloudMembers, setCloudMembers] = useState<Record<string, Record<string, ProjectMember>>>({})
+  const [cloudReminders, setCloudReminders] = useState<Record<string, string[]>>({})
+  const [cloudActivity, setCloudActivity] = useState<Record<string, Activity[]>>({})
+  // Optimistic masks for 6s undoable server actions (archive/delete project, remove member).
+  const [hiddenProjectIds, setHiddenProjectIds] = useState<Record<string, true>>({})
+  const [hiddenMembers, setHiddenMembers] = useState<Record<string, string[]>>({})
   // Local draft overlays keep debounced text inputs responsive and immune to intermediate snapshots.
   const [draftTasks, setDraftTasks] = useState<Record<string, Partial<Task>>>({})
   const [draftAreas, setDraftAreas] = useState<Record<string, Partial<Area>>>({})
+  const [draftProjects, setDraftProjects] = useState<Record<string, Partial<Project>>>({})
   const [theme, setTheme] = useState<Theme>(initial.theme)
   const [account, setAccountState] = useState<Account>(initial.account)
   const [ui, setUIState] = useState<UI>(UI0)
@@ -91,26 +129,88 @@ function useStoreValue() {
   const legacyRef = useRef<Data | null>(initial.legacy)
   const migratingRef = useRef(false)
   const writeQueueRef = useRef(new WriteQueue())
+  const projTaskUnsubsRef = useRef<Map<string, () => void>>(new Map())
+  const projMemberUnsubsRef = useRef<Map<string, () => void>>(new Map())
+  const knownActivePidsRef = useRef<Set<string>>(new Set())
 
   const cloudActive = Boolean(uid && account.loggedIn && !account.demo)
   const cloudUidRef = useRef<string | null>(null)
   cloudUidRef.current = cloudActive ? uid : null
+  const selfId = cloudActive && uid ? uid : 'me'
 
   const data = useMemo<Data>(() => {
     if (!cloudActive) return localData
+
     const mergedAreas = Object.keys(draftAreas).length
       ? cloudAreas.map(a => (draftAreas[a.id] ? { ...a, ...draftAreas[a.id] } : a))
       : cloudAreas
-    const mergedCloudTasks = Object.keys(draftTasks).length
+
+    const rawProjects = [...cloudActiveProjects, ...cloudArchivedProjects]
+    const seenPid = new Set<string>()
+    const mergedProjects: Project[] = []
+    for (const p of rawProjects) {
+      if (seenPid.has(p.id) || hiddenProjectIds[p.id]) continue
+      seenPid.add(p.id)
+      const memberMap = cloudMembers[p.id]
+      const myMember = uid ? memberMap?.[uid] : undefined
+      const hiddenMids = hiddenMembers[p.id]
+      const draft = draftProjects[p.id]
+      const members = hiddenMids?.length ? p.members.filter(m => !hiddenMids.includes(m)) : p.members
+      // Owner's private area never leaks to other members: member's own members/{uid}.area always wins.
+      const resolvedArea = myMember !== undefined ? myMember.area : (p.ownerId === uid ? p.area : null)
+      mergedProjects.push({
+        ...p,
+        area: resolvedArea,
+        members,
+        ...(draft ?? {}),
+      })
+    }
+
+    const mergedLooseTasks = Object.keys(draftTasks).length
       ? cloudTasks.map(t => (draftTasks[t.id] ? { ...t, ...draftTasks[t.id] } : t))
       : cloudTasks
+
+    const mergedProjectTasks: Task[] = []
+    for (const p of mergedProjects) {
+      const list = cloudProjectTasks[p.id]
+      if (!list) continue
+      for (const t of list) {
+        const draft = draftTasks[t.id]
+        const rems = t.id in cloudReminders ? cloudReminders[t.id] : undefined
+        mergedProjectTasks.push({
+          ...t,
+          ...(rems !== undefined ? { rems } : {}),
+          ...(draft ?? {}),
+        })
+      }
+    }
+
+    const activity = Object.values(cloudActivity).flat().sort((a, b) => b.ts - a.ts)
+
     return {
       areas: mergedAreas,
-      tasks: [...mergedCloudTasks, ...localData.tasks.filter(t => t.project != null)],
-      projects: localData.projects,
-      activity: localData.activity,
+      tasks: [...mergedLooseTasks, ...mergedProjectTasks],
+      projects: mergedProjects,
+      activity,
     }
-  }, [cloudActive, cloudAreas, cloudTasks, draftAreas, draftTasks, localData])
+  }, [
+    cloudActive,
+    uid,
+    localData,
+    cloudAreas,
+    cloudTasks,
+    cloudActiveProjects,
+    cloudArchivedProjects,
+    cloudProjectTasks,
+    cloudMembers,
+    cloudReminders,
+    cloudActivity,
+    hiddenProjectIds,
+    hiddenMembers,
+    draftAreas,
+    draftTasks,
+    draftProjects,
+  ])
 
   const dataRef = useRef(data)
   dataRef.current = data
@@ -120,11 +220,21 @@ function useStoreValue() {
   cloudTasksRef.current = cloudTasks
   const cloudAreasRef = useRef(cloudAreas)
   cloudAreasRef.current = cloudAreas
+  const cloudProjectTasksRef = useRef(cloudProjectTasks)
+  cloudProjectTasksRef.current = cloudProjectTasks
+  const cloudArchivedRef = useRef(cloudArchivedProjects)
+  cloudArchivedRef.current = cloudArchivedProjects
+  const cloudRemindersRef = useRef(cloudReminders)
+  cloudRemindersRef.current = cloudReminders
+  const hiddenProjectIdsRef = useRef(hiddenProjectIds)
+  hiddenProjectIdsRef.current = hiddenProjectIds
+  const uiRef = useRef(ui)
+  uiRef.current = ui
   const accountRef = useRef(account)
   accountRef.current = account
 
   const persistLocal = useCallback((nextLocal: Data, nextTheme: Theme, nextAccount: Account) => {
-    // Store signed-in users' Phase-1 local projects per uid so signOut or switching accounts never erases them.
+    // Store signed-in users' Phase-1 local projects per uid so pre-2F data survives until 2F migration.
     if (nextAccount.loggedIn && !nextAccount.demo && nextAccount.uid) {
       byUidRef.current = { ...byUidRef.current, [nextAccount.uid]: nextLocal }
     } else if (nextAccount.demo) {
@@ -147,8 +257,6 @@ function useStoreValue() {
     persistLocal(localData, theme, account)
   }, [localData, theme, account, persistLocal])
 
-  // Projects live only in localStorage until Phase 2. If another tab saved them, adopt that copy so this tab
-  // never overwrites it later with a stale one.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== STORAGE_KEY || !e.newValue) return
@@ -170,9 +278,53 @@ function useStoreValue() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  const setAccount = useCallback((patch: Partial<Account>) => setAccountState(a => ({ ...a, ...patch })), [])
+  const isPro = account.plan === 'pro' || account.demo
+  const isProRef = useRef(isPro)
+  isProRef.current = isPro
+  const openPro = useCallback((ctx: ProCtx = 'general') => setUIState(u => ({ ...u, pro: ctx })), [])
+
+  const isOwner = useCallback((p: Pick<Project, 'ownerId'> | null | undefined) => {
+    if (!p) return false
+    return (p.ownerId ?? 'me') === selfId
+  }, [selfId])
+
+  const isProFor = useCallback((p: Pick<Project, 'ownerPlan'> | null | undefined) => {
+    return isProForProject(p, isPro, account.demo)
+  }, [account.demo, isPro])
+
+  const personOf = useCallback((id: string, projectId?: string): Person => {
+    return resolvePerson(id, {
+      selfId,
+      selfName: account.name,
+      demo: account.demo,
+      membersByProject: cloudMembers,
+      projectId,
+    })
+  }, [account.demo, account.name, cloudMembers, selfId])
+
+  const say = useCallback((msg: string, undo: (() => void) | null = null) => {
+    setToast({ msg, undo })
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setToast(null), undo ? 6000 : 2600)
+  }, [])
+
+  /** Fire-and-forget wrapper so offline Firestore writes update cache immediately without blocking UI/toast. */
+  const runCloud = useCallback((op: Promise<unknown>, fallbackMsg = 'Perubahan gagal disimpan ke cloud') => {
+    void op.catch(() => say(fallbackMsg))
+  }, [say])
+
   // Keep Mode Demo and first-visit sign-in completely free of Firebase downloads;
   // only dynamically import Firebase when a saved session, redirect return, or Google click needs it.
   const shouldLoadFirebase = !account.demo && (Boolean(account.uid) || firebaseRequested)
+
+  const clearCloudProjectListeners = useCallback(() => {
+    for (const unsub of projTaskUnsubsRef.current.values()) unsub()
+    projTaskUnsubsRef.current.clear()
+    for (const unsub of projMemberUnsubsRef.current.values()) unsub()
+    projMemberUnsubsRef.current.clear()
+    knownActivePidsRef.current = new Set()
+  }, [])
 
   useEffect(() => {
     if (!shouldLoadFirebase || account.demo) return
@@ -211,9 +363,18 @@ function useStoreValue() {
 
         if (!fbUser) {
           handledUid.current = null
+          clearCloudProjectListeners()
           setUid(null)
           setCloudAreas([])
           setCloudTasks([])
+          setCloudActiveProjects([])
+          setCloudArchivedProjects([])
+          setCloudProjectTasks({})
+          setCloudMembers({})
+          setCloudReminders({})
+          setCloudActivity({})
+          setHiddenProjectIds({})
+          setHiddenMembers({})
           cloudAreaOrdersRef.current = new Map()
           setNeedsAreas(false)
           setAuthBusy(false)
@@ -290,7 +451,7 @@ function useStoreValue() {
                   return
                 }
 
-                // Restore this user's own per-uid local projects without leaking demo seed() or another user's projects.
+                // Restore this user's own per-uid local backup without leaking demo seed() or another user's data.
                 const userLocal = byUidRef.current[fbUser.uid] ?? EMPTY_DATA
                 const parsed = docsToAreas(areasSnap)
                 cloudAreaOrdersRef.current = parsed.orders
@@ -346,9 +507,9 @@ function useStoreValue() {
       clearProfileWatch()
       unsubAuth?.()
     }
-  }, [shouldLoadFirebase, account.demo])
+  }, [shouldLoadFirebase, account.demo, clearCloudProjectListeners])
 
-  // Subscribe to cloud areas and loose tasks while signed in to a real account.
+  // Subscribe to cloud areas, loose tasks, personal reminders, and active projects while signed in.
   useEffect(() => {
     const fb = fbRef.current
     if (!cloudActive || !uid || !fb) return
@@ -360,31 +521,188 @@ function useStoreValue() {
     })
 
     const unsubTasks = fb.onSnapshot(fb.collection(fb.db, 'users', uid, 'tasks'), snap => {
-      setCloudTasks(sortCloudTasks(snap.docs.map(docToTask)))
+      setCloudTasks(sortCloudTasks(snap.docs.map(d => docToTask(d, null))))
+    })
+
+    const unsubReminders = fb.onSnapshot(fb.collection(fb.db, 'users', uid, 'reminders'), snap => {
+      const map: Record<string, string[]> = {}
+      for (const d of snap.docs) {
+        const keys = d.data()?.keys
+        if (Array.isArray(keys)) map[d.id] = keys.filter((x): x is string => typeof x === 'string')
+      }
+      setCloudReminders(map)
+    })
+
+    const activeProjQuery = fb.query(
+      fb.collection(fb.db, 'projects'),
+      fb.where('memberIds', 'array-contains', uid),
+      fb.where('archived', '==', false),
+    )
+    const unsubProjects = fb.onSnapshot(activeProjQuery, snap => {
+      const rows = snap.docs.map(d => docToProject(d, uid))
+      const nextPids = new Set(rows.map(p => p.id))
+      const curUI = uiRef.current
+
+      // If the currently viewed project disappeared unexpectedly (kicked or deleted by owner), leave it cleanly.
+      if (
+        curUI.view === 'project'
+        && curUI.projectId
+        && knownActivePidsRef.current.has(curUI.projectId)
+        && !nextPids.has(curUI.projectId)
+        && !hiddenProjectIdsRef.current[curUI.projectId]
+        && !cloudArchivedRef.current.some(ap => ap.id === curUI.projectId)
+      ) {
+        setUIState(u => ({ ...u, view: 'projects', projectId: null, taskId: null, overlay: null }))
+        say('Anda tidak lagi tergabung di proyek ini.')
+      }
+
+      knownActivePidsRef.current = nextPids
+      setCloudActiveProjects(rows)
+      // Remove any stale copy from archived cache if a project was restored on another device.
+      setCloudArchivedProjects(prev => (prev.some(p => nextPids.has(p.id)) ? prev.filter(p => !nextPids.has(p.id)) : prev))
     })
 
     return () => {
       unsubAreas()
       unsubTasks()
+      unsubReminders()
+      unsubProjects()
+      clearCloudProjectListeners()
     }
-  }, [cloudActive, uid])
+  }, [cloudActive, uid, clearCloudProjectListeners, say])
 
-  const setAccount = useCallback((patch: Partial<Account>) => setAccountState(a => ({ ...a, ...patch })), [])
-  const isPro = account.plan === 'pro' || account.demo
-  const isProRef = useRef(isPro)
-  isProRef.current = isPro
-  const openPro = useCallback((ctx: ProCtx = 'general') => setUIState(u => ({ ...u, pro: ctx })), [])
+  // Compute which projects need live task or member listeners (keeping closed personal projects at 0 member reads).
+  const taskSubKey = useMemo(() => {
+    if (!cloudActive) return ''
+    const pids = new Set(cloudActiveProjects.map(p => p.id))
+    if (ui.view === 'project' && ui.projectId && cloudArchivedProjects.some(p => p.id === ui.projectId)) {
+      pids.add(ui.projectId)
+    }
+    return Array.from(pids).sort().join(',')
+  }, [cloudActive, cloudActiveProjects, cloudArchivedProjects, ui.view, ui.projectId])
 
-  const say = useCallback((msg: string, undo: (() => void) | null = null) => {
-    setToast({ msg, undo })
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setToast(null), undo ? 6000 : 2600)
-  }, [])
+  const memberSubKey = useMemo(() => {
+    if (!cloudActive || !uid) return ''
+    const pids = new Set<string>()
+    for (const p of cloudActiveProjects) {
+      if (p.members.length > 1 || (p.ownerId && p.ownerId !== uid)) pids.add(p.id)
+    }
+    if (
+      ui.view === 'project'
+      && ui.projectId
+      && (cloudActiveProjects.some(p => p.id === ui.projectId) || cloudArchivedProjects.some(p => p.id === ui.projectId))
+    ) {
+      pids.add(ui.projectId)
+    }
+    return Array.from(pids).sort().join(',')
+  }, [cloudActive, uid, cloudActiveProjects, cloudArchivedProjects, ui.view, ui.projectId])
 
-  /** Fire-and-forget wrapper so offline Firestore writes update cache immediately without blocking UI/toast. */
-  const runCloud = useCallback((op: Promise<unknown>, fallbackMsg = 'Perubahan gagal disimpan ke cloud') => {
-    void op.catch(() => say(fallbackMsg))
-  }, [say])
+  // Sync per-project task listeners.
+  useEffect(() => {
+    const fb = fbRef.current
+    if (!cloudActive || !fb) return
+    const target = new Set(taskSubKey ? taskSubKey.split(',') : [])
+
+    for (const [pid, unsub] of projTaskUnsubsRef.current.entries()) {
+      if (!target.has(pid)) {
+        unsub()
+        projTaskUnsubsRef.current.delete(pid)
+        setCloudProjectTasks(prev => {
+          if (!(pid in prev)) return prev
+          const next = { ...prev }
+          delete next[pid]
+          return next
+        })
+      }
+    }
+
+    for (const pid of target) {
+      if (projTaskUnsubsRef.current.has(pid)) continue
+      const unsub = fb.onSnapshot(
+        fb.collection(fb.db, 'projects', pid, 'tasks'),
+        snap => {
+          const sorted = sortCloudTasks(snap.docs.map(d => docToTask(d, pid)))
+          setCloudProjectTasks(prev => ({ ...prev, [pid]: sorted }))
+        },
+        () => {
+          /* Permission denied on removal/deletion is handled via the projects query listener without console noise. */
+        },
+      )
+      projTaskUnsubsRef.current.set(pid, unsub)
+    }
+  }, [cloudActive, taskSubKey])
+
+  // Sync per-project member listeners (shared active projects + currently open project).
+  useEffect(() => {
+    const fb = fbRef.current
+    if (!cloudActive || !fb) return
+    const target = new Set(memberSubKey ? memberSubKey.split(',') : [])
+
+    for (const [pid, unsub] of projMemberUnsubsRef.current.entries()) {
+      if (!target.has(pid)) {
+        unsub()
+        projMemberUnsubsRef.current.delete(pid)
+        setCloudMembers(prev => {
+          if (!(pid in prev)) return prev
+          const next = { ...prev }
+          delete next[pid]
+          return next
+        })
+      }
+    }
+
+    for (const pid of target) {
+      if (projMemberUnsubsRef.current.has(pid)) continue
+      const unsub = fb.onSnapshot(
+        fb.collection(fb.db, 'projects', pid, 'members'),
+        snap => {
+          const parsed = docsToMembers(snap)
+          setCloudMembers(prev => ({ ...prev, [pid]: parsed }))
+        },
+        () => {
+          /* Ignore permission-denied if removed or deleted mid-session. */
+        },
+      )
+      projMemberUnsubsRef.current.set(pid, unsub)
+    }
+  }, [cloudActive, memberSubKey])
+
+  // Load archived projects once when the user opens the Arsip view (BACKEND.md §3.2).
+  useEffect(() => {
+    const fb = fbRef.current
+    if (!cloudActive || !uid || !fb || !ui.archives) return
+    let active = true
+    const q = fb.query(
+      fb.collection(fb.db, 'projects'),
+      fb.where('memberIds', 'array-contains', uid),
+      fb.where('archived', '==', true),
+    )
+    void fb.getDocs(q).then(snap => {
+      if (!active) return
+      setCloudArchivedProjects(snap.docs.map(d => docToProject(d, uid)))
+    }).catch(() => { /* ignore offline cache miss */ })
+    return () => { active = false }
+  }, [cloudActive, uid, ui.archives])
+
+  // Load activity history once when ShareProject opens on a Pro-owned project (BACKEND.md §3.2).
+  useEffect(() => {
+    const fb = fbRef.current
+    if (!cloudActive || !fb || ui.overlay !== 'share' || !ui.projectId) return
+    const pid = ui.projectId
+    const proj = cloudActiveProjects.find(p => p.id === pid) ?? cloudArchivedProjects.find(p => p.id === pid)
+    if (!proj || !isProForProject(proj, isProRef.current, false)) return
+    let active = true
+    const q = fb.query(
+      fb.collection(fb.db, 'projects', pid, 'activity'),
+      fb.orderBy('createdAt', 'desc'),
+      fb.limit(30),
+    )
+    void fb.getDocs(q).then(snap => {
+      if (!active) return
+      setCloudActivity(prev => ({ ...prev, [pid]: docsToActivity(snap, pid) }))
+    }).catch(() => { /* ignore if not permitted or offline */ })
+    return () => { active = false }
+  }, [cloudActive, ui.overlay, ui.projectId, cloudActiveProjects, cloudArchivedProjects])
 
   const clearDraftTask = useCallback((id: string) => {
     setDraftTasks(prev => {
@@ -404,12 +722,22 @@ function useStoreValue() {
     })
   }, [])
 
+  const clearDraftProject = useCallback((id: string) => {
+    setDraftProjects(prev => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+  }, [])
+
   const cancelPendingWrite = useCallback((key: string) => {
     const entry = writeQueueRef.current.take(key)
     if (!entry) return
     if (entry.kind === 'task') clearDraftTask(entry.id)
-    else clearDraftArea(entry.id)
-  }, [clearDraftArea, clearDraftTask])
+    else if (entry.kind === 'area') clearDraftArea(entry.id)
+    else clearDraftProject(entry.id)
+  }, [clearDraftArea, clearDraftProject, clearDraftTask])
 
   const flushWriteKey = useCallback((key: string) => {
     const entry = writeQueueRef.current.take(key)
@@ -417,53 +745,104 @@ function useStoreValue() {
     const fb = fbRef.current
     if (!fb) {
       if (entry.kind === 'task') clearDraftTask(entry.id)
-      else clearDraftArea(entry.id)
+      else if (entry.kind === 'area') clearDraftArea(entry.id)
+      else clearDraftProject(entry.id)
       return
     }
 
     if (entry.kind === 'task') {
-      const cloudPatch = taskPatchToCloud(entry.patch, fb.serverTimestamp)
-      if (cloudPatch) {
-        // Apply optimistically to cloudTasks too so clearing the draft never flashes stale text.
-        setCloudTasks(list => list.map(t => (t.id === entry.id ? { ...t, ...entry.patch } : t)))
-        runCloud(fb.updateDoc(fb.doc(fb.db, 'users', entry.uid, 'tasks', entry.id), cloudPatch))
+      if (entry.projectId) {
+        const cloudPatch = projectTaskPatchToCloud(entry.patch, entry.uid, fb.serverTimestamp)
+        if (cloudPatch) {
+          const pid = entry.projectId
+          setCloudProjectTasks(prev => ({
+            ...prev,
+            [pid]: (prev[pid] ?? []).map(t => (t.id === entry.id ? { ...t, ...entry.patch } : t)),
+          }))
+          runCloud(fb.updateDoc(fb.doc(fb.db, 'projects', pid, 'tasks', entry.id), cloudPatch))
+        }
+      } else {
+        const cloudPatch = taskPatchToCloud(entry.patch, fb.serverTimestamp)
+        if (cloudPatch) {
+          // Apply optimistically to cloudTasks too so clearing the draft never flashes stale text.
+          setCloudTasks(list => list.map(t => (t.id === entry.id ? { ...t, ...entry.patch } : t)))
+          runCloud(fb.updateDoc(fb.doc(fb.db, 'users', entry.uid, 'tasks', entry.id), cloudPatch))
+        }
       }
       clearDraftTask(entry.id)
       return
     }
 
-    const areaPatch: UpdateData<DocumentData> = {}
+    if (entry.kind === 'area') {
+      const areaPatch: UpdateData<DocumentData> = {}
+      if (entry.patch.name !== undefined) {
+        const trimmed = entry.patch.name.trim().slice(0, 60)
+        if (trimmed) areaPatch.name = trimmed
+      }
+      if (Object.keys(areaPatch).length) {
+        setCloudAreas(list => list.map(a => (a.id === entry.id ? { ...a, ...entry.patch } : a)))
+        runCloud(fb.updateDoc(fb.doc(fb.db, 'users', entry.uid, 'areas', entry.id), areaPatch))
+      }
+      clearDraftArea(entry.id)
+      return
+    }
+
+    const projPatch: UpdateData<DocumentData> = {}
     if (entry.patch.name !== undefined) {
-      const trimmed = entry.patch.name.trim().slice(0, 60)
-      if (trimmed) areaPatch.name = trimmed
+      const trimmed = entry.patch.name.trim().slice(0, 200)
+      if (trimmed) projPatch.name = trimmed
     }
-    if (Object.keys(areaPatch).length) {
-      setCloudAreas(list => list.map(a => (a.id === entry.id ? { ...a, ...entry.patch } : a)))
-      runCloud(fb.updateDoc(fb.doc(fb.db, 'users', entry.uid, 'areas', entry.id), areaPatch))
+    if (Object.keys(projPatch).length) {
+      projPatch.updatedAt = fb.serverTimestamp()
+      const existing = dataRef.current.projects.find(p => p.id === entry.id)
+      setCloudActiveProjects(list => list.map(p => (p.id === entry.id ? { ...p, ...entry.patch } : p)))
+      setCloudArchivedProjects(list => list.map(p => (p.id === entry.id ? { ...p, ...entry.patch } : p)))
+      if (existing?.inviteToken && projPatch.name) {
+        const batch = fb.writeBatch(fb.db)
+        batch.update(fb.doc(fb.db, 'projects', entry.id), projPatch)
+        batch.update(fb.doc(fb.db, 'invites', existing.inviteToken), {
+          projectName: projPatch.name,
+          projectId: existing.id,
+          ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+          due: existing.due,
+          active: true,
+          updatedAt: fb.serverTimestamp(),
+        })
+        runCloud(batch.commit())
+      } else {
+        runCloud(fb.updateDoc(fb.doc(fb.db, 'projects', entry.id), projPatch))
+      }
     }
-    clearDraftArea(entry.id)
-  }, [clearDraftArea, clearDraftTask, runCloud])
+    clearDraftProject(entry.id)
+  }, [clearDraftArea, clearDraftProject, clearDraftTask, runCloud])
 
   const flushWrites = useCallback(() => {
     for (const key of writeQueueRef.current.keys()) flushWriteKey(key)
   }, [flushWriteKey])
 
-  // Flush pending debounced edits if the user switches tabs, backgrounds the app, or closes the page.
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') flushWrites()
-    }
-    document.addEventListener('visibilitychange', onVis)
-    window.addEventListener('pagehide', flushWrites)
-    return () => {
-      document.removeEventListener('visibilitychange', onVis)
-      window.removeEventListener('pagehide', flushWrites)
-    }
+  const flushAllPending = useCallback(() => {
+    flushWrites()
+    writeQueueRef.current.flushDelayed()
   }, [flushWrites])
 
+  // Flush pending debounced edits and delayed server actions when the page hides or closes.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') flushAllPending()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pagehide', flushAllPending)
+    return () => {
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pagehide', flushAllPending)
+    }
+  }, [flushAllPending])
+
   const setUI = useCallback((patch: Partial<UI>) => {
-    // Flush pending text edits when closing or switching task detail / area manager so final keystrokes are never lost.
+    // Flush pending text edits when closing or switching task detail / area or project manager.
     if ('taskId' in patch || 'overlay' in patch || 'view' in patch) flushWrites()
+    // If the user switches straight to Arsip during a 6s archive/delete undo window, send it now so Arsip is accurate.
+    if (patch.archives) writeQueueRef.current.flushDelayed()
     setUIState(u => ({ ...u, ...patch }))
   }, [flushWrites])
 
@@ -494,11 +873,80 @@ function useStoreValue() {
     })
   }, [runCloud, say])
 
+  /** Delay a Callable Function mutation for 6s so Urungkan cancels it before it ever hits the server. */
+  const undoableServer = useCallback((
+    msg: string,
+    execute: () => Promise<unknown>,
+    revertOptimistic: () => void,
+  ) => {
+    const cancel = writeQueueRef.current.scheduleDelayed(
+      () => {
+        void execute().catch(() => {
+          revertOptimistic()
+          say('Koneksi terputus. Perubahan belum tersimpan, coba lagi saat online.')
+        })
+      },
+      revertOptimistic,
+    )
+    say(msg, () => {
+      cancel()
+      setToast(null)
+    })
+  }, [say])
+
   const updateTask = useCallback((id: string, patch: Partial<Task>) => {
     const curUid = cloudUidRef.current
     const fb = fbRef.current
     const t0 = dataRef.current.tasks.find(x => x.id === id)
-    if (curUid && fb && t0 && !t0.project) {
+    if (curUid && fb && t0) {
+      if (t0.project) {
+        const pid = t0.project
+        const proj = dataRef.current.projects.find(p => p.id === pid)
+        const ownerPro = isProForProject(proj, isProRef.current, false)
+
+        // Personal reminders on project tasks live in users/{uid}/reminders/{taskId}.
+        if (patch.rems !== undefined) {
+          const cleanRems = patch.rems.filter(k => VALID_REMS.includes(k)).slice(0, ownerPro ? 6 : 1)
+          setCloudReminders(prev => ({ ...prev, [id]: cleanRems }))
+          runCloud(
+            fb.setDoc(fb.doc(fb.db, 'users', curUid, 'reminders', id), {
+              keys: cleanRems,
+              projectId: pid,
+              updatedAt: fb.serverTimestamp(),
+            }),
+          )
+        }
+
+        const textPatch: Partial<Task> = {}
+        const immediatePatch: Partial<Task> = {}
+        for (const [k, v] of Object.entries(patch) as [keyof Task, Task[keyof Task]][]) {
+          if (k === 'rems') continue
+          if (k === 'title' || k === 'notes') (textPatch as Record<string, unknown>)[k] = v
+          else (immediatePatch as Record<string, unknown>)[k] = v
+        }
+
+        const key = `task:${id}`
+        const hasText = Object.keys(textPatch).length > 0
+        const hasImmediate = Object.keys(immediatePatch).length > 0
+
+        if (hasImmediate) {
+          const pending = writeQueueRef.current.get(key)
+          const combined = pending && pending.kind === 'task' ? { ...pending.patch, ...immediatePatch } : immediatePatch
+          if (pending) cancelPendingWrite(key)
+          const cloudPatch = projectTaskPatchToCloud(combined, curUid, fb.serverTimestamp)
+          if (cloudPatch) {
+            runCloud(fb.updateDoc(fb.doc(fb.db, 'projects', pid, 'tasks', id), cloudPatch))
+          }
+          return
+        }
+
+        if (hasText) {
+          setDraftTasks(prev => ({ ...prev, [id]: { ...prev[id], ...textPatch } }))
+          writeQueueRef.current.queueTask(key, curUid, pid, id, textPatch, () => flushWriteKey(key))
+        }
+        return
+      }
+
       const textPatch: Partial<Task> = {}
       const immediatePatch: Partial<Task> = {}
       for (const [k, v] of Object.entries(patch) as [keyof Task, Task[keyof Task]][]) {
@@ -524,7 +972,7 @@ function useStoreValue() {
 
       if (hasText) {
         setDraftTasks(prev => ({ ...prev, [id]: { ...prev[id], ...textPatch } }))
-        writeQueueRef.current.queueTask(key, curUid, id, textPatch, () => flushWriteKey(key))
+        writeQueueRef.current.queueTask(key, curUid, null, id, textPatch, () => flushWriteKey(key))
       }
       return
     }
@@ -545,12 +993,15 @@ function useStoreValue() {
       const n = nextActiveOccurrence(t)
       const curUid = cloudUidRef.current
       const fb = fbRef.current
-      if (curUid && fb && !t.project) {
-        const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
+      if (curUid && fb) {
+        const ref = t.project
+          ? fb.doc(fb.db, 'projects', t.project, 'tasks', id)
+          : fb.doc(fb.db, 'users', curUid, 'tasks', id)
+        const extra = t.project ? { updatedBy: curUid } : {}
         undoableCloud(
           `Selesai. Diulang ke ${fmtDay(n)}`,
-          () => fb.updateDoc(ref, { due: n, start: null, status: 'todo', updatedAt: fb.serverTimestamp(), completedAt: null }),
-          () => fb.updateDoc(ref, { due: t.due, start: t.start, status: t.status, updatedAt: fb.serverTimestamp(), completedAt: null }),
+          () => fb.updateDoc(ref, { due: n, start: null, status: 'todo', ...extra, updatedAt: fb.serverTimestamp(), completedAt: null }),
+          () => fb.updateDoc(ref, { due: t.due, start: t.start, status: t.status, ...extra, updatedAt: fb.serverTimestamp(), completedAt: null }),
         )
         return
       }
@@ -570,13 +1021,16 @@ function useStoreValue() {
     if (withUndo) {
       const curUid = cloudUidRef.current
       const fb = fbRef.current
-      if (curUid && fb && t0 && !t0.project) {
-        const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
+      if (curUid && fb && t0) {
+        const ref = t0.project
+          ? fb.doc(fb.db, 'projects', t0.project, 'tasks', id)
+          : fb.doc(fb.db, 'users', curUid, 'tasks', id)
+        const extra = t0.project ? { updatedBy: curUid } : {}
         const prev = t0.status
         undoableCloud(
           `Dipindah ke ${STATUS[status]}`,
-          () => fb.updateDoc(ref, { status, updatedAt: fb.serverTimestamp(), completedAt: status === 'done' ? fb.serverTimestamp() : null }),
-          () => fb.updateDoc(ref, { status: prev, updatedAt: fb.serverTimestamp(), completedAt: prev === 'done' ? fb.serverTimestamp() : null }),
+          () => fb.updateDoc(ref, { status, ...extra, updatedAt: fb.serverTimestamp(), completedAt: status === 'done' ? fb.serverTimestamp() : null }),
+          () => fb.updateDoc(ref, { status: prev, ...extra, updatedAt: fb.serverTimestamp(), completedAt: prev === 'done' ? fb.serverTimestamp() : null }),
         )
         return
       }
@@ -594,10 +1048,39 @@ function useStoreValue() {
     const curUid = cloudUidRef.current
     const fb = fbRef.current
     const t0 = dataRef.current.tasks.find(x => x.id === id)
-    if (curUid && fb && t0 && !t0.project) {
+    if (curUid && fb && t0) {
       // Discard any queued text edit before deleting so a late debounce cannot write to a deleted doc.
       cancelPendingWrite(`task:${id}`)
       setUIState(u => ({ ...u, taskId: null }))
+
+      if (t0.project) {
+        const pid = t0.project
+        const proj = dataRef.current.projects.find(p => p.id === pid)
+        const ownerPro = isProForProject(proj, isProRef.current, false)
+        const ref = fb.doc(fb.db, 'projects', pid, 'tasks', id)
+        const restore = projectTaskToCloudDoc(t0, pid, curUid, ownerPro, proj?.members ?? [curUid], fb.serverTimestamp)
+        const prevRems = id in cloudRemindersRef.current ? cloudRemindersRef.current[id] : undefined
+        const remRef = fb.doc(fb.db, 'users', curUid, 'reminders', id)
+        undoableCloud(
+          'Tugas dihapus',
+          () => {
+            const batch = fb.writeBatch(fb.db)
+            batch.delete(ref)
+            if (prevRems !== undefined) batch.delete(remRef)
+            return batch.commit()
+          },
+          () => {
+            const batch = fb.writeBatch(fb.db)
+            batch.set(ref, restore)
+            if (prevRems !== undefined) {
+              batch.set(remRef, { keys: prevRems, projectId: pid, updatedAt: fb.serverTimestamp() })
+            }
+            return batch.commit()
+          },
+        )
+        return
+      }
+
       const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
       const restore = taskToCloudDoc(t0, curUid, isProRef.current, fb.serverTimestamp)
       undoableCloud(
@@ -643,33 +1126,48 @@ function useStoreValue() {
     const curUid = cloudUidRef.current
     const fb = fbRef.current
     if (curUid && fb) {
-      const cloudOverdue = cloudTasksRef.current.filter(t => isOverdue(t, t0))
-      const localOverdue = localDataRef.current.tasks.filter(t => t.project != null && isOverdue(t, t0))
-      const total = cloudOverdue.length + localOverdue.length
-      if (!total) return
-      const mutateLocal = localOverdue.length
-        ? (d: Data) => ({
-            ...d,
-            tasks: d.tasks.map(t => (t.project != null && isOverdue(t, t0) ? { ...t, due: t0, start: null } : t)),
-          })
-        : undefined
-      if (!cloudOverdue.length) {
-        undoable(`${total} tugas digeser ke Hari Ini`, mutateLocal!)
-        return
+      const looseOverdue = cloudTasksRef.current.filter(t => isOverdue(t, t0))
+      const projOverdue: Task[] = []
+      for (const list of Object.values(cloudProjectTasksRef.current)) {
+        for (const t of list) {
+          if (isOverdue(t, t0)) projOverdue.push(t)
+        }
       }
+      const total = looseOverdue.length + projOverdue.length
+      if (!total) return
+
+      const commitMoves = (forward: boolean) => {
+        const ops: ((batch: WriteBatch) => void)[] = []
+        for (const t of looseOverdue) {
+          const ref = fb.doc(fb.db, 'users', curUid, 'tasks', t.id)
+          ops.push(b => b.update(ref, {
+            due: forward ? t0 : t.due,
+            start: forward ? null : t.start,
+            updatedAt: fb.serverTimestamp(),
+          }))
+        }
+        for (const t of projOverdue) {
+          const ref = fb.doc(fb.db, 'projects', t.project!, 'tasks', t.id)
+          ops.push(b => b.update(ref, {
+            due: forward ? t0 : t.due,
+            start: forward ? null : t.start,
+            updatedBy: curUid,
+            updatedAt: fb.serverTimestamp(),
+          }))
+        }
+        const promises: Promise<unknown>[] = []
+        for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+          const batch = fb.writeBatch(fb.db)
+          for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch)
+          promises.push(batch.commit())
+        }
+        return Promise.all(promises)
+      }
+
       undoableCloud(
         `${total} tugas digeser ke Hari Ini`,
-        () => {
-          const batch = fb.writeBatch(fb.db)
-          cloudOverdue.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { due: t0, start: null, updatedAt: fb.serverTimestamp() }))
-          return batch.commit()
-        },
-        () => {
-          const batch = fb.writeBatch(fb.db)
-          cloudOverdue.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { due: t.due, start: t.start, updatedAt: fb.serverTimestamp() }))
-          return batch.commit()
-        },
-        mutateLocal,
+        () => commitMoves(true),
+        () => commitMoves(false),
       )
       return
     }
@@ -684,38 +1182,89 @@ function useStoreValue() {
   const moveTask = useCallback((t: Task, v: Dest) => {
     const d = parseDest(v)
     const np = d.project ? dataRef.current.projects.find(p => p.id === d.project) : null
-    const assignee = np ? (t.assignee && np.members.includes(t.assignee) ? t.assignee : 'me') : null
+    const fallbackPic = cloudUidRef.current ?? 'me'
+    const assignee = np ? (t.assignee && np.members.includes(t.assignee) ? t.assignee : fallbackPic) : null
     const curUid = cloudUidRef.current
     const fb = fbRef.current
 
-    // In Phase 1, loose tasks live in Firestore and project tasks remain local; crossing the boundary moves the record.
-    if (curUid && fb && !t.project && d.project) {
+    if (curUid && fb) {
       cancelPendingWrite(`task:${t.id}`)
-      const moved: Task = { ...t, project: d.project, area: null, section: d.section, assignee }
-      runCloud(fb.deleteDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id)))
-      setLocalData(x => ({ ...x, tasks: [moved, ...x.tasks.filter(k => k.id !== t.id)] }))
-      return
+
+      // Moving between loose <-> project or across different projects moves the underlying document in one batch.
+      if (t.project !== d.project) {
+        const batch = fb.writeBatch(fb.db)
+        const remRef = fb.doc(fb.db, 'users', curUid, 'reminders', t.id)
+        const curRems = t.project ? cloudRemindersRef.current[t.id] : t.rems
+
+        if (d.project && np) {
+          const ownerPro = isProForProject(np, isProRef.current, false)
+          const moved: Task = { ...t, project: d.project, area: null, section: d.section, assignee }
+          batch.set(
+            fb.doc(fb.db, 'projects', d.project, 'tasks', t.id),
+            projectTaskToCloudDoc(moved, d.project, curUid, ownerPro, np.members, fb.serverTimestamp),
+          )
+          if (t.project) {
+            batch.delete(fb.doc(fb.db, 'projects', t.project, 'tasks', t.id))
+            if (curRems !== undefined) batch.delete(remRef)
+          } else {
+            batch.delete(fb.doc(fb.db, 'users', curUid, 'tasks', t.id))
+          }
+          if (curRems !== undefined) {
+            batch.set(remRef, {
+              keys: curRems.filter(k => VALID_REMS.includes(k)).slice(0, ownerPro ? 6 : 1),
+              projectId: d.project,
+              updatedAt: fb.serverTimestamp(),
+            })
+          }
+        } else {
+          const moved: Task = {
+            ...t,
+            project: null,
+            area: d.area,
+            section: null,
+            assignee: null,
+            ...(curRems !== undefined ? { rems: curRems } : {}),
+          }
+          batch.set(
+            fb.doc(fb.db, 'users', curUid, 'tasks', t.id),
+            taskToCloudDoc(moved, curUid, isProRef.current, fb.serverTimestamp),
+          )
+          if (t.project) {
+            batch.delete(fb.doc(fb.db, 'projects', t.project, 'tasks', t.id))
+            if (curRems !== undefined) batch.delete(remRef)
+          }
+        }
+
+        runCloud(batch.commit())
+        return
+      }
     }
-    if (curUid && fb && t.project && !d.project) {
-      const moved: Task = { ...t, project: null, area: d.area, section: null, assignee: null }
-      setLocalData(x => ({ ...x, tasks: x.tasks.filter(k => k.id !== t.id) }))
-      runCloud(fb.setDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(moved, curUid, isProRef.current, fb.serverTimestamp)))
-      return
-    }
+
     updateTask(t.id, { project: d.project, area: d.area, section: d.section, assignee })
   }, [cancelPendingWrite, runCloud, updateTask])
 
   const addTask = useCallback((input: { title: string; dest: Dest; due: ISODate | null; prio: Priority; pic: string | null }) => {
     const d = parseDest(input.dest)
     const p = d.project ? dataRef.current.projects.find(x => x.id === d.project) : null
+    const fallbackPic = cloudUidRef.current ?? 'me'
     const t: Task = {
       id: 'n' + Date.now(), title: input.title, project: d.project, area: d.area, section: d.section,
-      assignee: p ? (input.pic && p.members.includes(input.pic) ? input.pic : 'me') : null,
+      assignee: p ? (input.pic && p.members.includes(input.pic) ? input.pic : fallbackPic) : null,
       status: 'todo', prio: input.prio, start: null, due: input.due, time: null, notes: '', rec: null, dur: null,
     }
     const curUid = cloudUidRef.current
     const fb = fbRef.current
-    if (curUid && fb && !d.project) {
+    if (curUid && fb) {
+      if (d.project && p) {
+        const ownerPro = isProForProject(p, isProRef.current, false)
+        runCloud(
+          fb.setDoc(
+            fb.doc(fb.db, 'projects', d.project, 'tasks', t.id),
+            projectTaskToCloudDoc(t, d.project, curUid, ownerPro, p.members, fb.serverTimestamp),
+          ),
+        )
+        return t
+      }
       runCloud(fb.setDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, isProRef.current, fb.serverTimestamp)))
       return t
     }
@@ -736,13 +1285,16 @@ function useStoreValue() {
     const suffix = patch.time ? ' · ' + patch.time : time === null && t.time ? ' · tanpa jam' : ''
     const curUid = cloudUidRef.current
     const fb = fbRef.current
-    if (curUid && fb && !t.project) {
-      const ref = fb.doc(fb.db, 'users', curUid, 'tasks', id)
-      const prev: UpdateData<DocumentData> = { due: t.due, start: t.start, updatedAt: fb.serverTimestamp() }
+    if (curUid && fb) {
+      const ref = t.project
+        ? fb.doc(fb.db, 'projects', t.project, 'tasks', id)
+        : fb.doc(fb.db, 'users', curUid, 'tasks', id)
+      const extra = t.project ? { updatedBy: curUid } : {}
+      const prev: UpdateData<DocumentData> = { due: t.due, start: t.start, ...extra, updatedAt: fb.serverTimestamp() }
       if (time !== undefined) prev.time = t.time
       undoableCloud(
         `Dipindah ke ${fmtDay(day)}${suffix}`,
-        () => fb.updateDoc(ref, { ...patch, updatedAt: fb.serverTimestamp() }),
+        () => fb.updateDoc(ref, { ...patch, ...extra, updatedAt: fb.serverTimestamp() }),
         () => fb.updateDoc(ref, prev),
       )
       return
@@ -750,39 +1302,291 @@ function useStoreValue() {
     undoable(`Dipindah ke ${fmtDay(day)}${suffix}`, d => ({ ...d, tasks: d.tasks.map(x => (x.id === id ? { ...x, ...patch } : x)) }))
   }, [undoable, undoableCloud])
 
-  const updateProject = useCallback((id: string, patch: Partial<Project>) => setLocalData(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...patch } : p)) })), [])
+  const updateProject = useCallback((id: string, patch: Partial<Project>) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      const p = dataRef.current.projects.find(x => x.id === id)
+      if (!p) return
+      const owner = (p.ownerId ?? curUid) === curUid
 
-  /* ----- Kelola proyek: Phase 1 stays local; Phase 2 moves to Firestore ----- */
+      // Non-owner members may ONLY update their own personal area mapping (members/{uid}.area).
+      if (!owner) {
+        if (patch.area !== undefined) {
+          const nextArea = patch.area ?? null
+          setCloudMembers(prev => {
+            const curMap = prev[id] ?? {}
+            const existing = curMap[curUid]
+            if (!existing) return prev
+            return { ...prev, [id]: { ...curMap, [curUid]: { ...existing, area: nextArea } } }
+          })
+          runCloud(
+            fb.updateDoc(fb.doc(fb.db, 'projects', id, 'members', curUid), {
+              area: nextArea,
+              updatedAt: fb.serverTimestamp(),
+            }),
+          )
+        }
+        return
+      }
+
+      const key = `project:${id}`
+      const textPatch: Partial<Project> = {}
+      const immediate: UpdateData<DocumentData> = {}
+
+      if (patch.name !== undefined) textPatch.name = patch.name
+      if (patch.area !== undefined) immediate.ownerArea = patch.area
+      if (patch.color !== undefined) immediate.color = patch.color
+      if (patch.start !== undefined) immediate.start = patch.start
+      if (patch.due !== undefined) immediate.due = patch.due
+      if (patch.sections !== undefined) immediate.sections = patch.sections
+
+      const hasImmediate = Object.keys(immediate).length > 0
+      const hasText = textPatch.name !== undefined
+
+      if (hasImmediate) {
+        const pending = writeQueueRef.current.get(key)
+        if (pending && pending.kind === 'project') {
+          if (pending.patch.name !== undefined) {
+            const trimmed = pending.patch.name.trim().slice(0, 200)
+            if (trimmed) immediate.name = trimmed
+          }
+          cancelPendingWrite(key)
+        }
+        immediate.updatedAt = fb.serverTimestamp()
+        const batch = fb.writeBatch(fb.db)
+        batch.update(fb.doc(fb.db, 'projects', id), immediate)
+        if (patch.area !== undefined) {
+          batch.update(fb.doc(fb.db, 'projects', id, 'members', curUid), {
+            area: patch.area ?? null,
+            updatedAt: fb.serverTimestamp(),
+          })
+        }
+        if (p.inviteToken && (immediate.name || immediate.due)) {
+          batch.update(fb.doc(fb.db, 'invites', p.inviteToken), {
+            projectName: (immediate.name as string | undefined) ?? p.name,
+            ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+            due: (immediate.due as string | undefined) ?? p.due,
+            active: true,
+            updatedAt: fb.serverTimestamp(),
+          })
+        }
+        runCloud(batch.commit())
+        return
+      }
+
+      if (hasText) {
+        setDraftProjects(prev => ({ ...prev, [id]: { ...prev[id], ...textPatch } }))
+        writeQueueRef.current.queueProject(key, curUid, id, textPatch, () => flushWriteKey(key))
+      }
+      return
+    }
+    setLocalData(d => ({ ...d, projects: d.projects.map(p => (p.id === id ? { ...p, ...patch } : p)) }))
+  }, [cancelPendingWrite, flushWriteKey, runCloud])
+
+  /* ----- Kelola proyek ----- */
   const mapProject = (d: Data, id: string, fn: (p: Project) => Project): Data => ({ ...d, projects: d.projects.map(p => (p.id === id ? fn(p) : p)) })
 
-  const renameSection = useCallback((pid: string, old: string, name: string) => setLocalData(d => ({
-    ...mapProject(d, pid, p => ({ ...p, sections: p.sections.map(x => (x === old ? name : x)) })),
-    tasks: d.tasks.map(t => (t.project === pid && t.section === old ? { ...t, section: name } : t)),
-  })), [])
+  const renameSection = useCallback((pid: string, old: string, name: string) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      const p = dataRef.current.projects.find(x => x.id === pid)
+      if (!p || (p.ownerId ?? curUid) !== curUid) return
+      const nextSections = p.sections.map(x => (x === old ? name : x))
+      const affected = (cloudProjectTasksRef.current[pid] ?? []).filter(t => t.section === old)
+      const ops: ((batch: WriteBatch) => void)[] = [
+        b => b.update(fb.doc(fb.db, 'projects', pid), { sections: nextSections, updatedAt: fb.serverTimestamp() }),
+        ...affected.map(t => (b: WriteBatch) =>
+          b.update(fb.doc(fb.db, 'projects', pid, 'tasks', t.id), {
+            section: name,
+            updatedBy: curUid,
+            updatedAt: fb.serverTimestamp(),
+          }),
+        ),
+      ]
+      const promises: Promise<unknown>[] = []
+      for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+        const batch = fb.writeBatch(fb.db)
+        for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch)
+        promises.push(batch.commit())
+      }
+      runCloud(Promise.all(promises))
+      return
+    }
+    setLocalData(d => ({
+      ...mapProject(d, pid, p => ({ ...p, sections: p.sections.map(x => (x === old ? name : x)) })),
+      tasks: d.tasks.map(t => (t.project === pid && t.section === old ? { ...t, section: name } : t)),
+    }))
+  }, [runCloud])
 
-  const addSection = useCallback((pid: string, name: string) => setLocalData(d => mapProject(d, pid, p => (p.sections.includes(name) ? p : { ...p, sections: [...p.sections, name] }))), [])
+  const addSection = useCallback((pid: string, name: string) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      const p = dataRef.current.projects.find(x => x.id === pid)
+      if (!p || (p.ownerId ?? curUid) !== curUid || p.sections.includes(name)) return
+      runCloud(fb.updateDoc(fb.doc(fb.db, 'projects', pid), {
+        sections: [...p.sections, name],
+        updatedAt: fb.serverTimestamp(),
+      }))
+      return
+    }
+    setLocalData(d => mapProject(d, pid, p => (p.sections.includes(name) ? p : { ...p, sections: [...p.sections, name] })))
+  }, [runCloud])
 
-  const deleteSection = useCallback((pid: string, name: string) => undoable(`Bagian "${name}" dihapus`, d => ({
-    ...mapProject(d, pid, p => ({ ...p, sections: p.sections.filter(x => x !== name) })),
-    tasks: d.tasks.map(t => (t.project === pid && t.section === name ? { ...t, section: null } : t)),
-  })), [undoable])
+  const deleteSection = useCallback((pid: string, name: string) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      const p = dataRef.current.projects.find(x => x.id === pid)
+      if (!p || (p.ownerId ?? curUid) !== curUid) return
+      const prevSections = p.sections
+      const nextSections = prevSections.filter(x => x !== name)
+      const affected = (cloudProjectTasksRef.current[pid] ?? []).filter(t => t.section === name)
+      const runBatch = (sections: string[], sectionVal: string | null) => {
+        const ops: ((batch: WriteBatch) => void)[] = [
+          b => b.update(fb.doc(fb.db, 'projects', pid), { sections, updatedAt: fb.serverTimestamp() }),
+          ...affected.map(t => (b: WriteBatch) =>
+            b.update(fb.doc(fb.db, 'projects', pid, 'tasks', t.id), {
+              section: sectionVal,
+              updatedBy: curUid,
+              updatedAt: fb.serverTimestamp(),
+            }),
+          ),
+        ]
+        const promises: Promise<unknown>[] = []
+        for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+          const batch = fb.writeBatch(fb.db)
+          for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch)
+          promises.push(batch.commit())
+        }
+        return Promise.all(promises)
+      }
+      undoableCloud(
+        `Bagian "${name}" dihapus`,
+        () => runBatch(nextSections, null),
+        () => runBatch(prevSections, name),
+      )
+      return
+    }
+    undoable(`Bagian "${name}" dihapus`, d => ({
+      ...mapProject(d, pid, p => ({ ...p, sections: p.sections.filter(x => x !== name) })),
+      tasks: d.tasks.map(t => (t.project === pid && t.section === name ? { ...t, section: null } : t)),
+    }))
+  }, [undoable, undoableCloud])
 
   const archiveProject = useCallback((p: Project) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      if ((p.ownerId ?? curUid) !== curUid) return
+      if (!navigator.onLine) {
+        say('Butuh koneksi internet untuk melakukan aksi ini.')
+        return
+      }
+      cancelPendingWrite(`project:${p.id}`)
+      setUIState(u => ({ ...u, view: 'projects', archives: false, taskId: null, overlay: null }))
+      setHiddenProjectIds(prev => ({ ...prev, [p.id]: true }))
+      const callArchive = fb.httpsCallable<{ projectId: string; archived: boolean }, unknown>(fb.fns, 'setProjectArchived')
+      undoableServer(
+        `"${p.name}" diarsipkan`,
+        async () => {
+          await callArchive({ projectId: p.id, archived: true })
+          setHiddenProjectIds(prev => {
+            if (!(p.id in prev)) return prev
+            const next = { ...prev }
+            delete next[p.id]
+            return next
+          })
+          setCloudArchivedProjects(prev => (prev.some(x => x.id === p.id) ? prev : [{ ...p, archived: true }, ...prev]))
+        },
+        () => {
+          setHiddenProjectIds(prev => {
+            if (!(p.id in prev)) return prev
+            const next = { ...prev }
+            delete next[p.id]
+            return next
+          })
+        },
+      )
+      return
+    }
     setUIState(u => ({ ...u, view: 'projects', archives: false, taskId: null, overlay: null }))
     undoable(`"${p.name}" diarsipkan`, d => mapProject(d, p.id, x => ({ ...x, archived: true })))
-  }, [undoable])
+  }, [cancelPendingWrite, say, undoable, undoableServer])
 
-  const restoreProject = useCallback((p: Project) => {
-    if (!isPro && dataRef.current.projects.filter(x => !x.archived).length >= FREE_PROJECT_QUOTA) {
+  const restoreProject = useCallback(async (p: Project): Promise<boolean> => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    const ownedActive = dataRef.current.projects.filter(x => !x.archived && (x.ownerId ?? selfId) === selfId).length
+    if (!isPro && ownedActive >= FREE_PROJECT_QUOTA) {
       openPro('proj')
       return false
+    }
+    if (curUid && fb) {
+      if ((p.ownerId ?? curUid) !== curUid) return false
+      if (!navigator.onLine) {
+        say('Butuh koneksi internet untuk memulihkan proyek.')
+        return false
+      }
+      setCloudArchivedProjects(prev => prev.filter(x => x.id !== p.id))
+      try {
+        const callRestore = fb.httpsCallable<{ projectId: string; archived: boolean }, unknown>(fb.fns, 'setProjectArchived')
+        await callRestore({ projectId: p.id, archived: false })
+        say('Proyek dikembalikan')
+        return true
+      } catch (err) {
+        setCloudArchivedProjects(prev => (prev.some(x => x.id === p.id) ? prev : [p, ...prev]))
+        if (fnErrCode(err) === 'functions/resource-exhausted') {
+          openPro('proj')
+        } else {
+          say(fnErrMsg(err, 'Gagal memulihkan proyek.'))
+        }
+        return false
+      }
     }
     setLocalData(d => mapProject(d, p.id, x => ({ ...x, archived: false })))
     say('Proyek dikembalikan')
     return true
-  }, [say, isPro, openPro])
+  }, [isPro, openPro, say, selfId])
 
   const deleteProject = useCallback((p: Project) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      if ((p.ownerId ?? curUid) !== curUid) return
+      if (!navigator.onLine) {
+        say('Butuh koneksi internet untuk melakukan aksi ini.')
+        return
+      }
+      cancelPendingWrite(`project:${p.id}`)
+      setUIState(u => ({ ...u, view: 'projects', archives: false, taskId: null, overlay: null }))
+      setHiddenProjectIds(prev => ({ ...prev, [p.id]: true }))
+      const callDelete = fb.httpsCallable<{ projectId: string }, unknown>(fb.fns, 'deleteProject')
+      undoableServer(
+        `"${p.name}" dihapus`,
+        async () => {
+          await callDelete({ projectId: p.id })
+          setHiddenProjectIds(prev => {
+            if (!(p.id in prev)) return prev
+            const next = { ...prev }
+            delete next[p.id]
+            return next
+          })
+          setCloudArchivedProjects(prev => prev.filter(x => x.id !== p.id))
+        },
+        () => {
+          setHiddenProjectIds(prev => {
+            if (!(p.id in prev)) return prev
+            const next = { ...prev }
+            delete next[p.id]
+            return next
+          })
+        },
+      )
+      return
+    }
     setUIState(u => ({ ...u, view: 'projects', archives: false, taskId: null, overlay: null }))
     undoable(`"${p.name}" dihapus`, d => ({
       ...d,
@@ -790,18 +1594,95 @@ function useStoreValue() {
       tasks: d.tasks.filter(t => t.project !== p.id),
       activity: d.activity.filter(a => a.p !== p.id),
     }))
-  }, [undoable])
+  }, [cancelPendingWrite, say, undoable, undoableServer])
 
   /* ----- Bagikan proyek ----- */
   const resetInviteToken = useCallback((pid: string) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      const p = dataRef.current.projects.find(x => x.id === pid)
+      if (!p || (p.ownerId ?? curUid) !== curUid || p.archived) return
+      const nextTok = randomInviteToken()
+      const limit = isProForProject(p, isProRef.current, false) ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
+      const batch = fb.writeBatch(fb.db)
+      if (p.inviteToken && p.inviteToken.length >= 20) {
+        batch.update(fb.doc(fb.db, 'invites', p.inviteToken), {
+          active: false,
+          projectName: p.name,
+          ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+          due: p.due,
+          updatedAt: fb.serverTimestamp(),
+        })
+      }
+      batch.set(fb.doc(fb.db, 'invites', nextTok), {
+        projectId: pid,
+        ownerId: curUid,
+        active: true,
+        createdAt: fb.serverTimestamp(),
+        projectName: p.name,
+        ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+        memberCount: p.members.length,
+        due: p.due,
+        full: p.members.length >= limit,
+      })
+      batch.update(fb.doc(fb.db, 'projects', pid), {
+        inviteToken: nextTok,
+        updatedAt: fb.serverTimestamp(),
+      })
+      runCloud(
+        batch.commit().then(() => say('Tautan baru dibuat. Tautan lama tidak berlaku lagi.')),
+        'Gagal memperbarui tautan undangan',
+      )
+      return
+    }
     const cur = dataRef.current.projects.find(p => p.id === pid)?.inviteToken
     let tok = (Math.random().toString(36) + '00000').slice(2, 7)
     while (tok === cur) tok = (Math.random().toString(36) + '00000').slice(2, 7)
     updateProject(pid, { inviteToken: tok })
     say('Tautan baru dibuat. Tautan lama tidak berlaku lagi.')
-  }, [say, updateProject])
+  }, [runCloud, say, updateProject])
 
   const removeMember = useCallback((pid: string, mid: string) => {
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      const p = dataRef.current.projects.find(x => x.id === pid)
+      if (!p || (p.ownerId ?? curUid) !== curUid || mid === curUid) return
+      if (!navigator.onLine) {
+        say('Butuh koneksi internet untuk melakukan aksi ini.')
+        return
+      }
+      const name = resolvePerson(mid, {
+        selfId: curUid,
+        selfName: accountRef.current.name,
+        demo: false,
+        membersByProject: cloudMembers,
+        projectId: pid,
+      }).name
+      setHiddenMembers(prev => ({
+        ...prev,
+        [pid]: prev[pid]?.includes(mid) ? prev[pid] : [...(prev[pid] ?? []), mid],
+      }))
+      const callRemove = fb.httpsCallable<{ projectId: string; memberUid: string }, unknown>(fb.fns, 'removeMember')
+      undoableServer(
+        `${name} dikeluarkan`,
+        async () => {
+          await callRemove({ projectId: pid, memberUid: mid })
+          setHiddenMembers(prev => ({
+            ...prev,
+            [pid]: (prev[pid] ?? []).filter(x => x !== mid),
+          }))
+        },
+        () => {
+          setHiddenMembers(prev => ({
+            ...prev,
+            [pid]: (prev[pid] ?? []).filter(x => x !== mid),
+          }))
+        },
+      )
+      return
+    }
     if (mid === 'me') return
     const name = PEOPLE[mid]?.name ?? mid
     undoable(`${name} dikeluarkan`, d => ({
@@ -810,7 +1691,7 @@ function useStoreValue() {
       tasks: d.tasks.map(t => (t.project === pid && t.assignee === mid ? { ...t, assignee: 'me' } : t)),
       activity: pushActivity(d.activity, pid, `${name} dikeluarkan dari proyek`),
     }))
-  }, [undoable])
+  }, [cloudMembers, say, undoable, undoableServer])
 
   const simulateJoin = useCallback((pid: string) => {
     const p = dataRef.current.projects.find(x => x.id === pid)
@@ -848,12 +1729,15 @@ function useStoreValue() {
           const trimmed = combined.name.trim().slice(0, 60)
           if (trimmed) cloudPatch.name = trimmed
         }
-        // A local project's colour still follows its area.
-        setLocalData(d => ({
-          ...d,
-          projects: d.projects.map(p => (p.area === id ? { ...p, color: patch.color! } : p)),
-        }))
-        runCloud(fb.updateDoc(fb.doc(fb.db, 'users', curUid, 'areas', id), cloudPatch))
+        const batch = fb.writeBatch(fb.db)
+        batch.update(fb.doc(fb.db, 'users', curUid, 'areas', id), cloudPatch)
+        // Update marker colour for owned cloud projects placed in this area.
+        for (const p of dataRef.current.projects) {
+          if ((p.ownerId ?? curUid) === curUid && p.area === id) {
+            batch.update(fb.doc(fb.db, 'projects', p.id), { color: patch.color, updatedAt: fb.serverTimestamp() })
+          }
+        }
+        runCloud(batch.commit())
         return
       }
       if (patch.name !== undefined) {
@@ -898,26 +1782,51 @@ function useStoreValue() {
     if (curUid && fb) {
       cancelPendingWrite(`area:${a.id}`)
       const prevOrder = cloudAreaOrdersRef.current.get(a.id) ?? 0
-      const affected = cloudTasksRef.current.filter(t => t.area === a.id)
+      const affectedTasks = cloudTasksRef.current.filter(t => t.area === a.id)
+      const affectedProjects = dataRef.current.projects.filter(p => p.area === a.id)
       const areaRef = fb.doc(fb.db, 'users', curUid, 'areas', a.id)
+
+      const runAreaCleanup = (restore: boolean) => {
+        const ops: ((batch: WriteBatch) => void)[] = [
+          restore
+            ? b => b.set(areaRef, { name: a.name, color: a.color, order: prevOrder })
+            : b => b.delete(areaRef),
+          ...affectedTasks.map(t => (b: WriteBatch) =>
+            b.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), {
+              area: restore ? a.id : null,
+              updatedAt: fb.serverTimestamp(),
+            }),
+          ),
+          ...affectedProjects.flatMap(p => {
+            const items: ((b: WriteBatch) => void)[] = []
+            if ((p.ownerId ?? curUid) === curUid) {
+              items.push(b => b.update(fb.doc(fb.db, 'projects', p.id), {
+                ownerArea: restore ? a.id : null,
+                updatedAt: fb.serverTimestamp(),
+              }))
+            }
+            if (cloudMembers[p.id]?.[curUid]) {
+              items.push(b => b.update(fb.doc(fb.db, 'projects', p.id, 'members', curUid), {
+                area: restore ? a.id : null,
+                updatedAt: fb.serverTimestamp(),
+              }))
+            }
+            return items
+          }),
+        ]
+        const promises: Promise<unknown>[] = []
+        for (let i = 0; i < ops.length; i += BATCH_LIMIT) {
+          const batch = fb.writeBatch(fb.db)
+          for (const op of ops.slice(i, i + BATCH_LIMIT)) op(batch)
+          promises.push(batch.commit())
+        }
+        return Promise.all(promises)
+      }
+
       undoableCloud(
         `Area "${a.name}" dihapus`,
-        () => {
-          const batch = fb.writeBatch(fb.db)
-          batch.delete(areaRef)
-          affected.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { area: null, updatedAt: fb.serverTimestamp() }))
-          return batch.commit()
-        },
-        () => {
-          const batch = fb.writeBatch(fb.db)
-          batch.set(areaRef, { name: a.name, color: a.color, order: prevOrder })
-          affected.forEach(t => batch.update(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), { area: a.id, updatedAt: fb.serverTimestamp() }))
-          return batch.commit()
-        },
-        d => ({
-          ...d,
-          projects: d.projects.map(p => (p.area === a.id ? { ...p, area: null } : p)),
-        }),
+        () => runAreaCleanup(false),
+        () => runAreaCleanup(true),
       )
       return
     }
@@ -927,15 +1836,42 @@ function useStoreValue() {
       tasks: d.tasks.map(t => (t.area === a.id ? { ...t, area: null } : t)),
       projects: d.projects.map(p => (p.area === a.id ? { ...p, area: null } : p)),
     }))
-  }, [cancelPendingWrite, undoable, undoableCloud])
+  }, [cancelPendingWrite, cloudMembers, undoable, undoableCloud])
 
-  const createProject = useCallback((name: string, area: string | null, due: ISODate) => {
+  const createProject = useCallback(async (name: string, area: string | null, due: ISODate): Promise<boolean> => {
     const a = dataRef.current.areas.find(x => x.id === area)
-    const p: Project = { id: 'p' + Date.now(), name, area, color: a?.color ?? 'var(--accent)', start: today(), due, members: ['me'], sections: [], archived: false }
+    const color = a?.color ?? 'var(--accent)'
+    const curUid = cloudUidRef.current
+    const fb = fbRef.current
+    if (curUid && fb) {
+      if (!navigator.onLine) {
+        say('Butuh koneksi internet untuk membuat proyek.')
+        return false
+      }
+      try {
+        const callCreate = fb.httpsCallable<
+          { name: string; ownerArea: string | null; color: string; start: string; due: string; sections: string[] },
+          { projectId: string }
+        >(fb.fns, 'createProject')
+        const res = await callCreate({ name, ownerArea: area, color, start: today(), due, sections: [] })
+        setUI({ view: 'project', projectId: res.data.projectId, mode: 'list', taskId: null })
+        say(`Proyek "${name}" dibuat`)
+        return true
+      } catch (err) {
+        if (fnErrCode(err) === 'functions/resource-exhausted') {
+          openPro('proj')
+        } else {
+          say(fnErrMsg(err, 'Gagal membuat proyek.'))
+        }
+        return false
+      }
+    }
+    const p: Project = { id: 'p' + Date.now(), name, area, color, start: today(), due, members: ['me'], sections: [], archived: false }
     setLocalData(d => ({ ...d, projects: [...d.projects, p] }))
     setUI({ view: 'project', projectId: p.id, mode: 'list', taskId: null })
     say(`Proyek "${name}" dibuat`)
-  }, [say, setUI])
+    return true
+  }, [openPro, say, setUI])
 
   /* ----- Akun ----- */
   const startDemo = useCallback(() => {
@@ -1163,13 +2099,22 @@ function useStoreValue() {
       setUIState(UI0())
       return
     }
-    // Flush any queued debounced text edits before revoking Firebase Auth credentials.
-    flushWrites()
+    // Flush queued text edits and pending 6s server actions before revoking Auth credentials.
+    flushAllPending()
+    clearCloudProjectListeners()
     setRedirectFlag(false)
     setFirebaseRequested(false)
     handledUid.current = null
     setCloudAreas([])
     setCloudTasks([])
+    setCloudActiveProjects([])
+    setCloudArchivedProjects([])
+    setCloudProjectTasks({})
+    setCloudMembers({})
+    setCloudReminders({})
+    setCloudActivity({})
+    setHiddenProjectIds({})
+    setHiddenMembers({})
     cloudAreaOrdersRef.current = new Map()
     // Clear active in-memory view without erasing byUid[uid] or pre-backend data in localStorage.
     setLocalData(EMPTY_DATA)
@@ -1179,6 +2124,7 @@ function useStoreValue() {
     setAuthBusy(false)
     setAuthStatus('')
     setAuthError('')
+    setToast(null)
     setAccountState(ACCOUNT0)
     setUIState(UI0())
     try {
@@ -1187,7 +2133,7 @@ function useStoreValue() {
     } catch {
       /* keep user returned to sign-in screen even if network is down */
     }
-  }, [flushWrites])
+  }, [clearCloudProjectListeners, flushAllPending])
 
   const buyPro = useCallback(() => {
     if (cloudUidRef.current) {
@@ -1211,7 +2157,7 @@ function useStoreValue() {
   const go = useCallback((view: View, extra: Partial<UI> = {}) => setUI({ view, taskId: null, overlay: null, ...extra }), [setUI])
 
   return {
-    ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, openPro,
+    ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, isProFor, isOwner, selfId, personOf, openPro,
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
     pendingMigration, migrating, migrationError, migrateLocalData, skipMigration,
     startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say, flushWrites,

@@ -122,6 +122,7 @@ export default function App() {
 function Sidebar() {
   const s = useStore()
   const active = s.projects.filter(p => !p.archived)
+  const ownedCount = active.filter(s.isOwner).length
   const todayOpen = s.todayTasks.filter(t => t.status !== 'done').length + s.overdueTasks.length
   const inboxOpen = s.tasks.filter(t => !t.project && t.status !== 'done').length
   const counts: Partial<Record<View, number>> = { today: todayOpen, inbox: inboxOpen }
@@ -164,7 +165,7 @@ function Sidebar() {
         })}
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-label px-5 pb-3 text-fg3">PROYEK ({s.isPro ? active.length : `${active.length}/${FREE_PROJECT_QUOTA}`})</span>
+        <span className="text-label px-5 pb-3 text-fg3">PROYEK ({s.isPro ? active.length : `${ownedCount}/${FREE_PROJECT_QUOTA}`})</span>
         {active.map(p => {
           const on = s.ui.view === 'project' && s.ui.projectId === p.id
           return (
@@ -226,7 +227,7 @@ function ProfileButton({ onClick }: { onClick: () => void }) {
 
 function ProfileSheet({ onClose }: { onClose: () => void }) {
   const s = useStore()
-  const owned = s.projects.filter(p => !p.archived).length
+  const owned = s.projects.filter(p => !p.archived && s.isOwner(p)).length
   const vibrate = useTouch() && canVibrate
   const notify = useNotifyPermission()
   const row = 'flex items-center gap-5 border-b border-line'

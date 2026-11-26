@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { PEOPLE, PRIO, REC_SHORT } from '../lib/constants'
+import { PRIO, REC_SHORT } from '../lib/constants'
 import { addDays, addMinutes, nextMonday, rel, today } from '../lib/dates'
 import { useMedia, useTouch } from '../lib/device'
 import { feedback } from '../lib/feedback'
@@ -98,7 +98,7 @@ export function TaskRow({ task: t, compact }: { task: Task; compact?: boolean })
   const metaColor = proj ? proj.color : areaId ? areaOf(s.areas, areaId).color : 'var(--fg3)'
   const time = t.time ? (t.dur ? `${t.time}–${addMinutes(t.time, t.dur)}` : t.time) : ''
   const showDate = t.due != null && t.due !== today() && !od
-  const assignee = proj && t.assignee && proj.members.length > 1 ? PEOPLE[t.assignee] : null
+  const assignee = proj && t.assignee && proj.members.length > 1 ? s.personOf(t.assignee, proj.id) : null
   const selected = s.ui.taskId === t.id
   // Pops only when the user ticks it, not when an already-done row mounts.
   const [pop, setPop] = useState(false)

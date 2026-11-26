@@ -14,16 +14,23 @@ import {
   connectFirestoreEmulator,
   deleteDoc,
   doc,
+  getDoc,
+  getDocs,
   getFirestore,
   initializeFirestore,
+  limit,
   onSnapshot,
+  orderBy,
   persistentLocalCache,
   persistentMultipleTabManager,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
 } from 'firebase/firestore'
+import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions'
 
 export {
   GoogleAuthProvider,
@@ -31,14 +38,21 @@ export {
   deleteDoc,
   doc,
   firebaseSignOut,
+  getDoc,
+  getDocs,
   getRedirectResult,
+  httpsCallable,
+  limit,
   onAuthStateChanged,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   signInWithPopup,
   signInWithRedirect,
   updateDoc,
+  where,
   writeBatch,
 }
 
@@ -70,6 +84,7 @@ export const db = isNewApp
       }),
     })
   : getFirestore(app)
+export const fns = getFunctions(app, 'asia-southeast2')
 
 // Guard emulator wiring so Vite HMR reloads do not connect twice.
 // Match the page hostname (localhost vs 127.0.0.1) so Auth redirect/popup stays same-site under storage partitioning.
@@ -77,4 +92,5 @@ if (useEmulators && isNewApp) {
   const host = typeof location !== 'undefined' && location.hostname === 'localhost' ? 'localhost' : '127.0.0.1'
   connectAuthEmulator(auth, `http://${host}:9099`)
   connectFirestoreEmulator(db, host, 8080)
+  connectFunctionsEmulator(fns, host, 5001)
 }

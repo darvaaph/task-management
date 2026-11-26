@@ -457,9 +457,10 @@ export function Timeline({ mobile, projectId }: { mobile?: boolean; projectId?: 
 
   const startDrag = (e: RPointerEvent, kind: 'p' | 't', id: string, mode: 'move' | 'resize') => {
     if (!canDrag) return
+    const o = kind === 'p' ? s.projects.find(p => p.id === id)! : s.tasks.find(t => t.id === id)!
+    if (kind === 'p' && !s.isOwner(o as Project)) return
     e.preventDefault()
     e.stopPropagation()
-    const o = kind === 'p' ? s.projects.find(p => p.id === id)! : s.tasks.find(t => t.id === id)!
     const os = o.start ?? o.due!, od = o.due!, x0 = e.clientX
     let last = 0
     const mv = (ev: PointerEvent) => {
