@@ -53,6 +53,7 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
+- **Fase 2 belum final:** tinjauan menemukan celah pengambilalihan ID proyek yang dihapus, warna proyek yang bisa memuat alamat luar, dan tawaran beli Pro yang keliru untuk anggota. Lihat `docs/HANDOFF-FASE2-PERBAIKAN.md`.
 - **Fase 1 final setelah tinjauan ulang (26 Nov 2026).** Sisa kecil yang sudah ditangani: "Coba Mode Demo" tidak lagi menimpa data lokal lama yang belum dimigrasikan (disimpan di slot `legacy` dan tetap ditawarkan saat login), dan data lokal disinkronkan antar tab lewat event `storage`. Yang sengaja tidak diubah: penulisan saat halaman ditutup tidak dijamin oleh browser (ketikan terakhir bisa hilang pada kasus langka), dan berkas Firebase baru tersimpan service worker setelah dipakai pertama kali. Belum diuji: penulisan saat offline dan alur login penuh setelah perubahan terakhir (peramban uji tidak bisa menjangkau `apis.google.com`).
 - Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`, dipisah per `uid` akun sehingga aman saat keluar-masuk atau ganti akun, tetapi **terikat ke satu perangkat sampai Fase 2**); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
