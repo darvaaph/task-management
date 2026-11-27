@@ -306,7 +306,6 @@ function useStoreValue() {
   const isPro = account.plan === 'pro' || account.demo
   const isProRef = useRef(isPro)
   isProRef.current = isPro
-  const openPro = useCallback((ctx: ProCtx = 'general') => setUIState(u => ({ ...u, pro: ctx })), [])
 
   const isOwner = useCallback((p: Pick<Project, 'ownerId'> | null | undefined) => {
     if (!p) return false
@@ -316,6 +315,12 @@ function useStoreValue() {
   const isProFor = useCallback((p: Pick<Project, 'ownerPlan'> | null | undefined) => {
     return isProForProject(p, isPro, account.demo)
   }, [account.demo, isPro])
+
+  // Features inside another user's Free-owned project follow the owner's plan, so offering Pro checkout to members would mislead them.
+  const canUpgradeFor = useCallback((p?: Pick<Project, 'ownerId' | 'ownerPlan'> | null) => {
+    if (!p || account.demo) return true
+    return isOwner(p) || isProFor(p)
+  }, [account.demo, isOwner, isProFor])
 
   const personOf = useCallback((id: string, projectId?: string): Person => {
     return resolvePerson(id, {
@@ -332,6 +337,14 @@ function useStoreValue() {
     window.clearTimeout(timer.current)
     timer.current = window.setTimeout(() => setToast(null), undo ? 6000 : 2600)
   }, [])
+
+  const openPro = useCallback((ctx: ProCtx = 'general', p?: Pick<Project, 'ownerId' | 'ownerPlan'> | null) => {
+    if (!canUpgradeFor(p)) {
+      say('Fitur ini mengikuti paket pemilik proyek.')
+      return
+    }
+    setUIState(u => ({ ...u, pro: ctx }))
+  }, [canUpgradeFor, say])
 
   /** Fire-and-forget wrapper so offline Firestore writes update cache immediately without blocking UI/toast. */
   const runCloud = useCallback((op: Promise<unknown>, fallbackMsg = 'Perubahan gagal disimpan ke cloud') => {
@@ -2611,7 +2624,7 @@ function useStoreValue() {
   const localProjectCount = cloudActive ? localData.projects.length : 0
 
   return {
-    ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, isProFor, isOwner, selfId, personOf, openPro,
+    ...data, data, theme, setTheme, ui, setUI, account, setAccount, isPro, isProFor, isOwner, canUpgradeFor, selfId, personOf, openPro,
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
     pendingMigration, migrating, migrationStatus, migrationError, localProjectCount, migrateLocalData, skipMigration, abortMigration, openLocalMigration,
     inviteToken, inviteState, joinedProjectId, ensureInviteToken, acceptInvite, dismissInvite, retryInvite, signInFromInviteDemo, pickJoinedArea,

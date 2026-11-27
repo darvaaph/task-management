@@ -114,7 +114,8 @@ Jangan pakai nilai Tailwind "biasa" (`p-4` ≠ 16px di sini). Ukuran yang tidak 
 - Aturan domain (terlambat, hari ini, progres, pengulangan) ada di `lib/logic.ts`. Tambahkan di sana, jangan diulang di komponen.
 
 ### 7. Gratis vs Pro
-- Cek dengan `s.isPro` (Pro **atau** mode demo). Fitur terkunci **tetap terlihat** dengan `ProBadge`; mengetuknya memanggil `s.openPro(ctx)`.
+- Cek dengan `s.isPro` (Pro **atau** mode demo), atau `s.isProFor(project)` untuk fitur di dalam proyek. Fitur terkunci **tetap terlihat** dengan `ProBadge`; mengetuknya memanggil `s.openPro(ctx, project?)`.
+- **Pengecualian proyek bersama milik orang lain (Gratis):** jika pengguna adalah anggota di proyek milik orang lain yang pemiliknya Gratis (`!s.canUpgradeFor(project)`), jangan membuka layar Pro karena pembelian Pro anggota tidak membuka fitur proyek itu. `s.openPro(ctx, project)` menampilkan toast *"Fitur ini mengikuti paket pemilik proyek."*, dan Timeline proyek menampilkan keterangan pengganti tanpa tombol beli. `ProBadge` tetap terlihat.
 - Fitur Pro baru: tambahkan `ProCtx` di `store.tsx`, kalimat konteks di `CTX`, dan barisnya di `ROWS` (`components/Pro.tsx`).
 - Fitur terkunci tidak boleh jadi menu utama.
 - Semua batas harus divalidasi ulang di server begitu backend ada (PRD §3).

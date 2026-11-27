@@ -298,7 +298,7 @@ Selain chip cepat, setiap isian tanggal (detail tugas, proyek baru, kelola proye
 
 Mode Demo membuka semua fitur Pro dengan label DEMO PREVIEW.
 
-**Pola fitur terkunci:** fitur Pro **tetap terlihat** dengan badge PRO, tidak disembunyikan. Mengetuknya membuka layar Pro dengan kotak konteks ("Timeline termasuk di Pro…") dan baris tabel yang relevan ditandai. Fitur terkunci **tidak** dijadikan menu utama.
+**Pola fitur terkunci:** fitur Pro **tetap terlihat** dengan badge PRO, tidak disembunyikan. Mengetuknya membuka layar Pro dengan kotak konteks ("Timeline termasuk di Pro…") dan baris tabel yang relevan ditandai. Fitur terkunci **tidak** dijadikan menu utama. **Pengecualian untuk anggota di proyek pemilik Gratis:** karena fitur di dalam proyek mengikuti paket pemilik (PRD §5.4), `ProBadge` tetap terlihat tetapi mengetuk chip terkunci (durasi, ulangi, tautan PRO pengingat) menampilkan toast *"Fitur ini mengikuti paket pemilik proyek."* tanpa membuka layar beli Pro, dan Timeline proyek menampilkan keterangan pengganti yang sama tanpa tombol *"Lihat TaskFlow Pro"*. Pemilik proyek, tugas lepas, Mode Demo, dan Timeline utama di Jadwal tetap membuka layar Pro seperti biasa.
 
 **Layar Pro:** desktop modal 560 px, HP sheet 92 %. Isi: judul, kotak konteks (opsional), tabel Fitur | Gratis | Pro, harga, tombol "Beli Pro" (aksen), "Nanti saja", catatan pembayaran (web atau Google Play, status Pro tersimpan di akun). Pengguna Pro melihat "Pro sudah aktif" tanpa tombol beli. Harga Rp99.000 di prototipe hanya contoh. Sebelum pembayaran Xendit/Google Play aktif, menekan "Beli Pro" pada akun Google menampilkan toast *"Pembayaran Pro belum aktif di tahap ini."* (status `plan` dibaca hanya-baca dari cloud).
 

@@ -79,7 +79,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
           {sw}
         </div>
         {empty}
-        {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} mobile /> : canTimeline ? <Timeline mobile projectId={P.id} /> : <div className="px-6"><ProLocked ctx="tl" /></div>}
+        {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} mobile /> : canTimeline ? <Timeline mobile projectId={P.id} /> : <div className="px-6"><ProLocked ctx="tl" project={P} /></div>}
       </div>
     )
   }
@@ -110,7 +110,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
       </div>
       <div className="max-w-[780px]"><InlineComposer placeholder="Tambah tugas ke proyek ini…" /></div>
       {mode === 'list' && empty}
-      {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} /> : canTimeline ? <Timeline projectId={P.id} /> : <ProLocked ctx="tl" />}
+      {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} /> : canTimeline ? <Timeline projectId={P.id} /> : <ProLocked ctx="tl" project={P} />}
     </div>
   )
 }

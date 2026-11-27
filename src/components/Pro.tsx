@@ -1,3 +1,4 @@
+import type { Project } from '../lib/types'
 import { useStore, type ProCtx } from '../store'
 import { Modal, Sheet } from './ui'
 
@@ -77,9 +78,10 @@ export function ProScreen({ mobile }: { mobile: boolean }) {
     : <Modal onClose={close} label="TaskFlow Pro" width={560} elevated>{body}</Modal>
 }
 
-/** Shown in place of a Pro view for free accounts: the feature stays visible, with a way to upgrade. */
-export function ProLocked({ ctx }: { ctx: ProCtx }) {
+/** Shown in place of a Pro view for free accounts: the feature stays visible, with a way to upgrade (or owner-plan info for members). */
+export function ProLocked({ ctx, project }: { ctx: ProCtx; project?: Project }) {
   const s = useStore()
+  const byOwner = !s.canUpgradeFor(project)
   return (
     <div className="grid min-h-[260px] flex-1 place-items-center rounded-lg border border-dashed border-line2 bg-surface px-11 py-16">
       <div className="flex max-w-[380px] flex-col items-center gap-6 text-center">
@@ -90,8 +92,16 @@ export function ProLocked({ ctx }: { ctx: ProCtx }) {
         </div>
         <ProBadge />
         <div className="font-display text-[20px] leading-tight font-semibold">Lihat semua proyek dalam satu linimasa</div>
-        <div className="text-[13.5px] leading-normal text-fg2">Geser jadwal proyek, ubah durasi, dan temukan tenggat yang bertabrakan. Termasuk di TaskFlow Pro, sekali bayar.</div>
-        <button type="button" onClick={() => s.openPro(ctx)} className="mt-2 h-21 rounded-md border-0 bg-accent px-10 text-[14px] font-semibold text-on-accent">Lihat TaskFlow Pro</button>
+        <div className="text-[13.5px] leading-normal text-fg2">
+          {byOwner
+            ? 'Geser jadwal proyek, ubah durasi, dan temukan tenggat yang bertabrakan.'
+            : 'Geser jadwal proyek, ubah durasi, dan temukan tenggat yang bertabrakan. Termasuk di TaskFlow Pro, sekali bayar.'}
+        </div>
+        {byOwner ? (
+          <p className="m-0 rounded-md bg-surface2 px-6 py-4 text-[13px] font-medium text-fg2">Fitur ini mengikuti paket pemilik proyek.</p>
+        ) : (
+          <button type="button" onClick={() => s.openPro(ctx, project)} className="mt-2 h-21 rounded-md border-0 bg-accent px-10 text-[14px] font-semibold text-on-accent">Lihat TaskFlow Pro</button>
+        )}
       </div>
     </div>
   )

@@ -186,7 +186,7 @@ function Duration({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }
     <div className="flex flex-wrap gap-2.5">
       {DURS.map(([v, l]) => {
         const locked = !proOk && v != null
-        return <LockChip key={l} big={big} active={(d.t.dur ?? null) === v} locked={locked} onClick={() => (locked ? d.s.openPro('dur') : d.upd({ dur: v }))}>{l}</LockChip>
+        return <LockChip key={l} big={big} active={(d.t.dur ?? null) === v} locked={locked} onClick={() => (locked ? d.s.openPro('dur', d.proj) : d.upd({ dur: v }))}>{l}</LockChip>
       })}
     </div>
   )
@@ -199,7 +199,7 @@ function Repeat({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) 
       {RECS.map(([v, l, pro]) => {
         const locked = pro && !proOk
         // Turning repeat on for an undated task dates it today.
-        return <LockChip key={l} big={big} active={(d.t.rec ?? null) === v} locked={locked} onClick={() => (locked ? d.s.openPro('rec') : d.upd({ rec: v, due: v && !d.t.due ? today() : d.t.due }))}>{l}</LockChip>
+        return <LockChip key={l} big={big} active={(d.t.rec ?? null) === v} locked={locked} onClick={() => (locked ? d.s.openPro('rec', d.proj) : d.upd({ rec: v, due: v && !d.t.due ? today() : d.t.due }))}>{l}</LockChip>
       })}
     </div>
   )
@@ -219,7 +219,7 @@ function Reminders({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean 
         })}
       </div>
       <p className="m-0 text-[12px] leading-normal text-fg3">
-        {proOk ? 'Bisa pilih lebih dari satu.' : <>Gratis: 1 pengingat per tugas. Lebih dari satu di <button type="button" onClick={() => d.s.openPro('rem')} aria-label="Lihat TaskFlow Pro" className="inline-flex border-0 bg-transparent p-0 align-middle"><ProBadge /></button></>}
+        {proOk ? 'Bisa pilih lebih dari satu.' : <>Gratis: 1 pengingat per tugas. Lebih dari satu di <button type="button" onClick={() => d.s.openPro('rem', d.proj)} aria-label={d.s.canUpgradeFor(d.proj) ? 'Lihat TaskFlow Pro' : 'Info paket proyek'} className="inline-flex border-0 bg-transparent p-0 align-middle"><ProBadge /></button></>}
       </p>
       {cur.length > 0 && <NotifyHint />}
     </div>
