@@ -849,6 +849,57 @@ describe('Serangan 10 & 11 — Validasi updatedBy, assignee, dan fitur Pro mengi
     })
     await assertSucceeds(moveBatch.commit())
   })
+
+  it('11b. setelah pemilik proyek turun dari Pro ke Gratis, mengubah status/menghapus nilai Pro lama diizinkan, sedangkan mengganti atau memasang nilai Pro baru ditolak (termasuk pengingat ganda)', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore()
+      await db.doc('projects/proj-pro/tasks/t-pro-existing').set(
+        makeProjectTask({
+          project: 'proj-pro',
+          title: 'Tugas Berdurasi Lama',
+          dur: 60,
+          rec: 'weekdays',
+          createdBy: PRO_OWNER,
+        }),
+      )
+      await db.doc(`users/${FREE_MEMBER}/reminders/t-pro-existing`).set({
+        projectId: 'proj-pro',
+        keys: ['m10', 'm30', 'd1'],
+      })
+      await db.doc('projects/proj-pro').update({ ownerPlan: 'free' })
+    })
+
+    const memberDb = authedDb(FREE_MEMBER)
+    const ownerDb = authedDb(PRO_OWNER)
+    const taskRef = memberDb.doc('projects/proj-pro/tasks/t-pro-existing')
+    const remRef = memberDb.doc(`users/${FREE_MEMBER}/reminders/t-pro-existing`)
+
+    // Changing status while keeping existing dur/rec is allowed.
+    await assertSucceeds(taskRef.update({ status: 'done', updatedBy: FREE_MEMBER }))
+    // Replacing dur or rec with another Pro value is denied.
+    await assertFails(taskRef.update({ dur: 120, updatedBy: FREE_MEMBER }))
+    await assertFails(taskRef.update({ rec: 'monthly', updatedBy: FREE_MEMBER }))
+    // Clearing dur individually (while rec: 'weekdays' remains) or clearing rec is allowed.
+    await assertSucceeds(ownerDb.doc('projects/proj-pro/tasks/t-pro-existing').update({ dur: null, updatedBy: PRO_OWNER }))
+    await assertSucceeds(taskRef.update({ rec: null, updatedBy: FREE_MEMBER }))
+    // Creating a new Pro-featured task after downgrade is still denied.
+    await assertFails(
+      ownerDb.doc('projects/proj-pro/tasks/t-after-downgrade').set(
+        makeProjectTask({
+          project: 'proj-pro',
+          dur: 30,
+          createdBy: PRO_OWNER,
+        }),
+      ),
+    )
+
+    // Existing multi-reminder can keep or remove items, but cannot add or swap to new multi-reminders.
+    await assertSucceeds(remRef.update({ projectId: 'proj-pro', keys: ['m10', 'm30', 'd1'], updatedAt: new Date() }))
+    await assertSucceeds(remRef.update({ projectId: 'proj-pro', keys: ['m10', 'm30'] }))
+    await assertFails(remRef.update({ projectId: 'proj-pro', keys: ['m10', 'm30', 'h1'] }))
+    await assertFails(remRef.update({ projectId: 'proj-pro', keys: ['d0', 'd1'] }))
+    await assertSucceeds(remRef.update({ projectId: 'proj-pro', keys: ['m10'] }))
+  })
 })
 
 describe('Serangan 12 & 13 — Riwayat aktivitas proyek', () => {

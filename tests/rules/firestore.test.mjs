@@ -410,6 +410,36 @@ describe('users/{uid}/tasks — batasan fitur Pro (dur, rec, rems)', () => {
     await assertFails(ref.update({ createdBy: OTHER_UID }))
     await assertFails(ref.update({ createdAt: new Date('2020-01-01T00:00:00Z') }))
   })
+
+  it('mengizinkan pengguna yang turun paket (Pro -> Gratis) mengubah status atau menghapus fitur Pro lama, tetapi menolak memasang/mengganti nilai Pro baru', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`users/${PRO_UID}`).update({ plan: 'free', proSource: null })
+    })
+
+    const downgradedDb = authedDb(PRO_UID)
+    const ref = downgradedDb.doc(`users/${PRO_UID}/tasks/t-pro-full`)
+
+    // Keeping existing dur/rec/rems while changing status or clearing individual Pro fields must succeed.
+    await assertSucceeds(ref.update({ status: 'done', updatedAt: new Date() }))
+    await assertSucceeds(ref.update({ rems: ['m10'] }))
+    await assertSucceeds(ref.update({ dur: null }))
+    await assertSucceeds(ref.update({ rec: null }))
+
+    // Re-seed full Pro task for testing disallowed Pro replacements on downgraded Free user.
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc(`users/${PRO_UID}/tasks/t-pro-full`).update({
+        dur: 60,
+        rec: 'weekdays',
+        rems: ['m10', 'm30'],
+      })
+    })
+
+    await assertFails(ref.update({ dur: 90 }))
+    await assertFails(ref.update({ rec: 'monthly' }))
+    await assertFails(ref.update({ rems: ['m10', 'm30', 'd1'] }))
+    await assertFails(ref.update({ rems: ['d0', 'd1'] }))
+    await assertFails(downgradedDb.doc(`users/${PRO_UID}/tasks/t-new-pro`).set({ title: 'Baru', dur: 30 }))
+  })
 })
 
 describe('users/{uid}/reminders — pengingat per pengguna', () => {

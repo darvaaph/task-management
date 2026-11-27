@@ -236,15 +236,28 @@ service cloud.firestore {
         && (a.get('order', null) == null || a.order is number);
     }
 
-    function validTask(uid) {
+    function looseTaskNeedsPro(t, isCreate) {
+      let dur = t.get('dur', null);
+      let rec = t.get('rec', null);
+      let rems = t.get('rems', null);
+      return isCreate
+        ? (dur != null || rec in ['weekdays', 'monthly'] || (rems is list && rems.size() > 1))
+        : ((dur != null && dur != resource.data.get('dur', null))
+            || (rec in ['weekdays', 'monthly'] && rec != resource.data.get('rec', null))
+            || (rems is list && rems.size() > 1 && !(
+              resource.data.get('rems', null) is list
+              && rems.size() <= resource.data.rems.size()
+              && resource.data.rems.hasAll(rems)
+            )));
+    }
+
+    function validTask(uid, isCreate) {
       let t = request.resource.data;
       let dur = t.get('dur', null);
       let rec = t.get('rec', null);
       let rems = t.get('rems', null);
-      // Combine Pro checks so isPro(uid) is evaluated at most once even when all Pro fields are set.
-      let needsPro = dur != null
-        || rec in ['weekdays', 'monthly']
-        || (rems is list && rems.size() > 1);
+      // Combine Pro checks so isPro(uid) is evaluated at most once, and only when Pro values are newly set or changed.
+      let needsPro = looseTaskNeedsPro(t, isCreate);
 
       return t.keys().hasOnly([
         'title',
@@ -304,13 +317,21 @@ service cloud.firestore {
           || request.resource.data.get('createdAt', null) == resource.data.createdAt);
     }
 
-    function validProjectReminderPlan(uid, pid, remCount) {
+    function validProjectReminderPlan(uid, pid, needsPro) {
       let proj = projectData(pid);
       return hasMember(proj, uid)
-        && (remCount <= 1 || proj.get('ownerPlan', 'free') == 'pro');
+        && (!needsPro || proj.get('ownerPlan', 'free') == 'pro');
     }
 
-    function validProjectReminder(uid, taskId) {
+    function reminderNeedsPro(keys, isCreate) {
+      return keys.size() > 1 && (isCreate || !(
+        resource.data.get('keys', null) is list
+        && keys.size() <= resource.data['keys'].size()
+        && resource.data['keys'].hasAll(keys)
+      ));
+    }
+
+    function validProjectReminder(uid, taskId, isCreate) {
       let r = request.resource.data;
       let pid = r.get('projectId', null);
       // Use bracket notation r['keys'] so field lookup does not collide with Map.keys().
@@ -326,7 +347,7 @@ service cloud.firestore {
         && (r.get('updatedAt', null) == null || r.updatedAt is timestamp)
         && projectExists(pid)
         && existsAfter(/databases/$(database)/documents/projects/$(pid)/tasks/$(taskId))
-        && validProjectReminderPlan(uid, pid, r['keys'].size());
+        && validProjectReminderPlan(uid, pid, reminderNeedsPro(r['keys'], isCreate));
     }
 
     function validActiveInviteForProject(pid, tok) {
@@ -394,7 +415,11 @@ service cloud.firestore {
       let rec = t.get('rec', null);
       let assignee = t.get('assignee', null);
       // Pro features inside shared projects follow the project owner's plan (ownerPlan), not the writer's plan.
-      let needsPro = dur != null || rec in ['weekdays', 'monthly'];
+      // Existing Pro values may be kept or cleared after a plan downgrade; only setting/changing them requires Pro.
+      let needsPro = isCreate
+        ? (dur != null || rec in ['weekdays', 'monthly'])
+        : ((dur != null && dur != resource.data.get('dur', null))
+            || (rec in ['weekdays', 'monthly'] && rec != resource.data.get('rec', null)));
 
       // Project tasks do not store rems (stored in users/{uid}/reminders/{taskId}) or starter guide flags.
       return t.keys().hasOnly([
@@ -521,15 +546,15 @@ service cloud.firestore {
 
       match /tasks/{taskId} {
         allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid) && validTask(uid);
-        allow update: if isOwner(uid) && validTask(uid) && immutableTaskFieldsUnchanged();
+        allow create: if isOwner(uid) && validTask(uid, true);
+        allow update: if isOwner(uid) && validTask(uid, false) && immutableTaskFieldsUnchanged();
       }
 
       match /reminders/{taskId} {
         allow read, delete: if isOwner(uid);
-        allow create: if isOwner(uid) && validProjectReminder(uid, taskId);
+        allow create: if isOwner(uid) && validProjectReminder(uid, taskId, true);
         allow update: if isOwner(uid)
-          && validProjectReminder(uid, taskId)
+          && validProjectReminder(uid, taskId, false)
           && request.resource.data.projectId == resource.data.get('projectId', request.resource.data.projectId);
       }
     }
