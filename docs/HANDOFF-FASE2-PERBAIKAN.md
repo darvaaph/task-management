@@ -66,9 +66,8 @@ Kuota di dalam transaksi, `joinProject` (token cocok + paket pemilik saat itu), 
 
 ---
 
-## Menunggu keputusan pemilik — jangan dikerjakan
-**Bolehkah anggota membagikan tautan undangan?** Sekarang anggota bisa melihat dan menyalinnya. PRD §5.4 menyebut pemilik yang membuat dan membagikan tautan.
-Perlu diketahui sebelum memutuskan: menyembunyikannya di UI **tidak cukup**, karena `inviteToken` ada di dokumen proyek yang boleh dibaca anggota. Kalau diputuskan "hanya pemilik", token harus dipindah ke dokumen yang hanya bisa dibaca pemilik. Jangan mengubah apa pun sampai pemilik memutuskan.
+## Keputusan pemilik (27 Nov 2026) — selesai
+**Bolehkah anggota membagikan tautan undangan?** **Diputuskan: boleh** (untuk tugas kelompok ini lebih praktis; batas anggota dan tombol Reset tautan tetap menjaga pemilik). Perilaku kode di `Share.tsx` & `firestore.rules` sudah sesuai; keputusan dicatat di `PRD.md` §5.4, `DESIGN.md` §6.25, dan `BACKEND.md` §2.4.
 
 ## Setelah selesai
 `npm run build`, `npm run test:rules`, `npm run test:functions`, perbarui `PROGRESS.md`, lalu laporkan sesuai format. Sertakan **apa yang belum teruji** (dua akun aktif bersamaan, offline, 375px/terang untuk halaman undangan, migrasi lokal di browser) dan cek sebanyak yang bisa dilakukan. Pemilik akan menyerahkan hasilnya untuk **tinjauan ulang** sebelum Fase 3.

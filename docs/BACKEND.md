@@ -59,7 +59,7 @@ Bentuk sama dengan `Task` di `src/lib/types.ts`, ditambah `createdBy`, `createdA
 | `memberIds[]` | daftar uid, untuk query `array-contains` dan pengecekan rules tanpa `get()` tambahan |
 | `memberCount` | dijaga Functions |
 | `ownerPlan` | salinan `plan` pemilik; diperbarui Functions saat pemilik upgrade. Menentukan kuota 3/20, Timeline proyek, dan riwayat aktivitas untuk semua anggota (PRD §5.4) |
-| `inviteToken` | token aktif; hanya dibaca pemilik di UI |
+| `inviteToken` | token aktif; dibaca pemilik dan anggota di Bagikan (keputusan pemilik 27 Nov 2026), hanya pemilik yang dapat membuat/meresetnya |
 
 Kenapa ada salinan (`memberIds`, `ownerPlan`): Security Rules dibatasi beberapa `get()` per permintaan dan tiap `get()` dihitung sebagai baca. Menyimpan ringkasan di dokumen proyek membuat aturan cukup membaca satu dokumen.
 

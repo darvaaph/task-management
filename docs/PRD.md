@@ -100,7 +100,7 @@ Tiga opsi arsitektur telah dibandingkan:
    - *Untuk pengguna Gratis di menu Timeline Utama:* Menampilkan pratinjau visual terkunci disertai tombol penawaran **Upgrade Pro Sekali Bayar**.
 
 ### 5.4 Kolaborasi (*Share Project*) & Aturan Kuota
-- **Alur Undangan:** Pemilik *Project* menekan **Share / Undang** → sistem membuat tautan undangan unik (`invite_token`) → pemilik bisa menyalin tautan, mereset tautan, atau mengeluarkan anggota kapan saja.
+- **Alur Undangan:** Pemilik *Project* menekan **Share / Undang** → sistem membuat tautan undangan unik (`invite_token`) → pemilik dan anggota dapat menyalin serta membagikan tautan undangan (selama kuota anggota belum penuh), sementara hanya pemilik yang dapat mereset tautan atau mengeluarkan anggota kapan saja.
 - **Aturan Kuota Proyek Aktif:**
   - Batas **maksimal 5 Project aktif** bagi pengguna **Gratis** **hanya menghitung Project yang dimiliki/dibuat sendiri (`owner_id`)** serta tidak diarsipkan (`is_archived = false`).
   - Pengguna Gratis **bebas bergabung** ke *Shared Project* milik teman tanpa menghabiskan kuota 5 *Project* pribadinya.

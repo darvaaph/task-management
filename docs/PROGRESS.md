@@ -57,7 +57,7 @@ Terakhir diperbarui: 27 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
-- **Fase 2 selesai & perbaikan tinjauan (P1–P4) beres:** siap untuk tinjauan ulang sebelum Fase 3. Pertanyaan kebijakan (*"Bolehkah anggota membagikan tautan undangan?"*) sengaja tidak disentuh menunggu keputusan pemilik (`docs/HANDOFF-FASE2-PERBAIKAN.md`).
+- **Fase 2 selesai & perbaikan tinjauan (P1–P4) beres:** siap untuk tinjauan ulang sebelum Fase 3. Keputusan kebijakan tautan undangan selesai (27 Nov 2026): anggota boleh melihat dan menyalin tautan undangan; tombol Reset tautan, keluarkan anggota, dan kuota tetap menjaga pemilik (`PRD.md` §5.4, `DESIGN.md` §6.25, `BACKEND.md` §2.4).
 - **Fase 1 final setelah tinjauan ulang (26 Nov 2026).** Sisa kecil yang sudah ditangani: "Coba Mode Demo" tidak lagi menimpa data lokal lama yang belum dimigrasikan (disimpan di slot `legacy` dan tetap ditawarkan saat login), dan data lokal disinkronkan antar tab lewat event `storage`. Yang sengaja tidak diubah: penulisan saat halaman ditutup tidak dijamin oleh browser (ketikan terakhir bisa hilang pada kasus langka), dan berkas Firebase baru tersimpan service worker setelah dipakai pertama kali. Belum diuji: penulisan saat offline dan alur login penuh setelah perubahan terakhir (peramban uji tidak bisa menjangkau `apis.google.com`).
 - Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`, dipisah per `uid` akun sehingga aman saat keluar-masuk atau ganti akun, tetapi **terikat ke satu perangkat sampai Fase 2**); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
@@ -65,6 +65,7 @@ Terakhir diperbarui: 27 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
+- **27 Nov 2026** — Keputusan pemilik dicatat: anggota boleh melihat & menyalin tautan undangan (`Share.tsx` sudah sesuai; batas anggota & Reset tautan tetap khusus pemilik), diselaraskan di `PRD.md` §5.4, `DESIGN.md` §6.25, `BACKEND.md` §2.4, dan `HANDOFF-FASE2-PERBAIKAN.md`.
 - **27 Nov 2026** — Perbaikan Fase 2 (P4): membuktikan dan memperbaiki kendala penurunan paket (Pro → Gratis) pada `firestore.rules` (`validTask`, `validProjectTask`, `validProjectReminder`) agar mempertahankan atau menghapus nilai Pro lama tetap diizinkan sementara memasang/mengganti nilai Pro baru tetap ditolak, disertai tes di `firestore.test.mjs` dan `projects.test.mjs`.
 - **27 Nov 2026** — Perbaikan Fase 2 (P3): pengecekan terpusat `canUpgradeFor` di `store.tsx` agar anggota di proyek pemilik Gratis tidak ditawari layar beli Pro pada `TaskDetail.tsx` (durasi, ulangi, pengingat) dan Timeline `ProjectView.tsx` (`ProLocked`), menampilkan *"Fitur ini mengikuti paket pemilik proyek."* dengan `ProBadge` tetap terlihat, serta pembaruan `AGENTS.md` §7 dan `DESIGN.md` §6.18.
 - **27 Nov 2026** — Perbaikan Fase 2 (P2): pembatasan `color` proyek ke `AREA_COLORS` + `var(--accent)` di `createProject` dan `validProjectUpdate`, sanitasi fallback ke `var(--accent)` di `cloudCodec.ts` (`docToProject`) & migrasi lokal `store.tsx`, audit `style`/`src`/`href`/`photoURL` (bersih, tidak ada `<img>`), serta tes gagal→hijau→lepas→hijau.

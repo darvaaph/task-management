@@ -351,7 +351,7 @@ Kemunculan berikutnya tugas berulang tampil di Bulan dan Minggu sebagai chip/blo
 ### 6.25 Bagikan proyek
 
 Tombol "Bagikan" di header detail proyek (desktop dan HP).
-- Tautan undangan + Salin + Reset tautan (tautan lama langsung tidak berlaku).
+- Tautan undangan + Salin (bisa dilihat dan disalin oleh pemilik maupun anggota selama tautan sudah dibuat) + Reset tautan khusus pemilik (tautan lama langsung tidak berlaku).
 - Anggota: kuota "x dari 3" (Gratis) atau "x dari 20" (Pro) dengan bar; pemilik tidak bisa dikeluarkan; mengeluarkan anggota mengembalikan tugasnya ke pemilik, dengan Urungkan.
 - Kuota penuh: pesan + "Lihat Pro" (Gratis).
 - **Pratinjau undangan** (apa yang dilihat teman, termasuk "Proyek ini sudah penuh") tertutup secara bawaan: baris "Lihat tampilan undangan ›" (`aria-expanded`) membukanya di tempat.
