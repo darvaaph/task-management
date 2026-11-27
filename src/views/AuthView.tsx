@@ -18,7 +18,7 @@ const HERO_AREAS = AREA_PRESETS.slice(0, 3).map((a, i) => ({ ...a, color: AREA_C
 /**
  * Sign-in screen (Google only; Mode Demo opens from the /demo link) and first-login starting area picker (DESIGN §6.20, §6.29).
  */
-export function AuthView({ mobile }: { mobile: boolean }) {
+export function AuthView({ mobile, onOpenPrivacy }: { mobile: boolean; onOpenPrivacy: () => void }) {
   const s = useStore()
   const [picked, setPicked] = useState<string[]>(DEFAULT_AREA_IDS)
   const [areaErr, setAreaErr] = useState('')
@@ -65,6 +65,15 @@ export function AuthView({ mobile }: { mobile: boolean }) {
           <p className="m-0 -mt-3 text-center text-[12.5px] leading-normal text-fg3">
             Gunakan akun Google pribadi. Akun sekolah atau kampus kadang diblokir oleh admin.
           </p>
+          <div className="flex justify-center">
+            <a
+              href="/privasi"
+              onClick={(e) => { e.preventDefault(); onOpenPrivacy() }}
+              className="p-2 text-[12.5px] font-medium text-fg3 underline underline-offset-2 hover:text-fg"
+            >
+              Kebijakan privasi
+            </a>
+          </div>
         </>
       ) : (
         <>

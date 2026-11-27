@@ -2607,6 +2607,72 @@ function useStoreValue() {
     }
   }, [clearCloudProjectListeners, flushAllPending])
 
+  const deleteAccount = useCallback(async (): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const curUid = cloudUidRef.current
+    if (!curUid || accountRef.current.demo) {
+      return { ok: false, error: 'Hapus akun hanya tersedia untuk akun Google.' }
+    }
+    try {
+      const fb = fbRef.current ?? (await loadFirebase())
+      const fn = fb.httpsCallable<Record<string, never>, { deleted: boolean }>(fb.fns, 'deleteAccount')
+      await fn({})
+
+      // Account and its cloud data are gone: stop listeners and clear local per-uid backup without flushing stale writes.
+      clearCloudProjectListeners()
+      for (const key of writeQueueRef.current.keys()) writeQueueRef.current.take(key)
+      writeQueueRef.current.clearDelayed()
+
+      const nextByUid = { ...byUidRef.current }
+      delete nextByUid[curUid]
+      byUidRef.current = nextByUid
+
+      setRedirectFlag(false)
+      setFirebaseRequested(false)
+      handledUid.current = null
+      setCloudAreas([])
+      setCloudTasks([])
+      setCloudActiveProjects([])
+      setCloudArchivedProjects([])
+      setCloudProjectTasks({})
+      setCloudMembers({})
+      setCloudReminders({})
+      setCloudActivity({})
+      setHiddenProjectIds({})
+      setHiddenMembers({})
+      cloudAreaOrdersRef.current = new Map()
+      creatingInviteRef.current.clear()
+      setInviteToken(null)
+      setPendingInvite(null)
+      clearInviteUrl()
+      setInviteState({ status: 'idle' })
+      setJoinedProjectId(null)
+      setLocalData(EMPTY_DATA)
+      setPendingMigration(null)
+      setMigrationStatus('')
+      setMigrationError('')
+      setNeedsAreas(false)
+      setAuthBusy(false)
+      setAuthStatus('')
+      setAuthError('')
+      setAccountState(ACCOUNT0)
+      setUIState(UI0())
+      persistLocal(EMPTY_DATA, theme, ACCOUNT0)
+      try {
+        await fb.firebaseSignOut(fb.auth)
+      } catch {
+        /* local auth session may already be invalidated after Auth deletion */
+      }
+      say('Akun kamu sudah dihapus.')
+      return { ok: true }
+    } catch (err) {
+      const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code) : ''
+      if (code === 'functions/unauthenticated') {
+        return { ok: false, error: 'Sesi masuk sudah berakhir. Masuk ulang lalu coba lagi.' }
+      }
+      return { ok: false, error: 'Gagal menghapus akun. Periksa koneksi internet lalu coba lagi.' }
+    }
+  }, [clearCloudProjectListeners, loadFirebase, persistLocal, say, theme])
+
   const signInFromInviteDemo = useCallback(async () => {
     if (inviteToken) setPendingInvite(inviteToken)
     setAccountState(a => ({ ...a, uid: undefined, loggedIn: false, demo: false }))
@@ -2641,7 +2707,7 @@ function useStoreValue() {
     needsAreas, authBusy, authStatus, authError, clearAuthError: () => setAuthError(''),
     pendingMigration, migrating, migrationStatus, migrationError, localProjectCount, migrateLocalData, skipMigration, abortMigration, openLocalMigration,
     inviteToken, inviteState, joinedProjectId, ensureInviteToken, acceptInvite, dismissInvite, retryInvite, signInFromInviteDemo, pickJoinedArea,
-    startDemo, signInWithGoogle, completeSetup, signOut, buyPro, go, toast, setToast, say, flushWrites,
+    startDemo, signInWithGoogle, completeSetup, signOut, deleteAccount, buyPro, go, toast, setToast, say, flushWrites,
     updateTask, toggleTask, setStatus, deleteTask, clearGuides, markNotified, moveToToday, moveAllOverdue, moveTask, addTask, createProject, resetDemo, moveDue, updateProject,
     renameSection, addSection, deleteSection, archiveProject, restoreProject, deleteProject, resetInviteToken, removeMember, simulateJoin,
     updateArea, addArea, deleteArea,

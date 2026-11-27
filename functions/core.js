@@ -1,4 +1,5 @@
 import { getApps, initializeApp } from 'firebase-admin/app'
+import { getAuth } from 'firebase-admin/auth'
 import { FieldValue, getFirestore } from 'firebase-admin/firestore'
 
 const isEmulator = Boolean(
@@ -12,6 +13,7 @@ if (getApps().length === 0) {
 }
 
 export const db = getFirestore()
+export const auth = getAuth()
 
 export const ACTIVITY_LIMIT = 200
 export const BATCH_LIMIT = 500
@@ -30,6 +32,75 @@ export async function deleteDocsInBatches(docs) {
     }
     await batch.commit()
   }
+}
+
+/** Delete all subcollections (tasks, members, activity) and invites belonging to a project. */
+export async function cleanupProjectChildren(projectId) {
+  const [tasksSnap, membersSnap, activitySnap, invitesSnap] = await Promise.all([
+    db.collection(`projects/${projectId}/tasks`).select().get(),
+    db.collection(`projects/${projectId}/members`).select().get(),
+    db.collection(`projects/${projectId}/activity`).select().get(),
+    db.collection('invites').where('projectId', '==', projectId).select().get(),
+  ])
+
+  const allDocs = [
+    ...tasksSnap.docs,
+    ...membersSnap.docs,
+    ...activitySnap.docs,
+    ...invitesSnap.docs,
+  ]
+  if (allDocs.length > 0) {
+    await deleteDocsInBatches(allDocs)
+  }
+}
+
+/**
+ * Recompute users/{uid}.activeOwned and projects/{pid}.memberCount across the database.
+ * Only writes documents whose stored counter differs from the actual count, in <=500-op batches.
+ * Exported from core.js so tests can invoke it directly without Cloud Scheduler.
+ */
+export async function reconcileAllCounters() {
+  const [projectsSnap, usersSnap] = await Promise.all([
+    db.collection('projects').select('ownerId', 'archived', 'memberIds', 'memberCount').get(),
+    db.collection('users').select('activeOwned').get(),
+  ])
+
+  const activeByOwner = new Map()
+  const updates = []
+  let projectsUpdated = 0
+  let usersUpdated = 0
+
+  for (const projSnap of projectsSnap.docs) {
+    const data = projSnap.data() ?? {}
+    const memberIds = Array.isArray(data.memberIds) ? data.memberIds : []
+    const actualMemberCount = memberIds.length
+    if (data.memberCount !== actualMemberCount) {
+      updates.push({ ref: projSnap.ref, data: { memberCount: actualMemberCount } })
+      projectsUpdated += 1
+    }
+    if (data.archived !== true && typeof data.ownerId === 'string' && data.ownerId) {
+      activeByOwner.set(data.ownerId, (activeByOwner.get(data.ownerId) ?? 0) + 1)
+    }
+  }
+
+  for (const userSnap of usersSnap.docs) {
+    const expectedActive = activeByOwner.get(userSnap.id) ?? 0
+    const currentActive = userSnap.data()?.activeOwned
+    if (currentActive !== expectedActive) {
+      updates.push({ ref: userSnap.ref, data: { activeOwned: expectedActive } })
+      usersUpdated += 1
+    }
+  }
+
+  for (let i = 0; i < updates.length; i += BATCH_LIMIT) {
+    const batch = db.batch()
+    for (const u of updates.slice(i, i + BATCH_LIMIT)) {
+      batch.update(u.ref, u.data)
+    }
+    await batch.commit()
+  }
+
+  return { projectsUpdated, usersUpdated }
 }
 
 /** Keep at most the latest 200 activity entries per project with minimal Firestore reads. */

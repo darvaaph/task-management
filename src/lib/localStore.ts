@@ -154,6 +154,10 @@ export const takeDemoPath = (): boolean => {
   return true
 }
 
+/** Static privacy policy route, matched like /invite so it works both before and after sign-in. */
+export const isPrivacyPath = (pathname = typeof location !== 'undefined' ? location.pathname : '/'): boolean =>
+  /^\/privasi\/?$/.test(pathname)
+
 /** Heuristic for pre-1E browsers that stored untouched seed() data before loggedIn was ever true. */
 export function isUntouchedSeed(saved: StoredState): boolean {
   if (saved.seeded === true) return true

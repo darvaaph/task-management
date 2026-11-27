@@ -13,9 +13,11 @@ import { Modal, Segmented, Sheet } from './components/ui'
 import { FREE_PROJECT_QUOTA } from './lib/constants'
 import { searchShortcut, useMedia, useTouch } from './lib/device'
 import { canVibrate } from './lib/feedback'
+import { isPrivacyPath } from './lib/localStore'
 import { projectProgress } from './lib/logic'
 import { useStore, type Store, type View } from './store'
 import { InboxView } from './views/InboxView'
+import { PrivacyView } from './views/PrivacyView'
 import { ProjectView } from './views/ProjectView'
 import { ProjectsView } from './views/ProjectsView'
 import { TodayView } from './views/TodayView'
@@ -54,8 +56,27 @@ export default function App() {
   const wide = useMedia('(min-width: 1100px)')
   const [quick, setQuick] = useState(false)
   const [profile, setProfile] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [privacy, setPrivacy] = useState(() => isPrivacyPath())
   const sel = s.ui.taskId ? s.tasks.find(t => t.id === s.ui.taskId) : undefined
   const { setUI } = s
+  useEffect(() => {
+    const onPop = () => setPrivacy(isPrivacyPath())
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+  const openPrivacy = () => {
+    if (typeof history !== 'undefined' && !isPrivacyPath()) {
+      history.pushState(null, '', '/privasi')
+    }
+    setPrivacy(true)
+  }
+  const closePrivacy = () => {
+    if (typeof history !== 'undefined' && isPrivacyPath()) {
+      history.pushState(null, '', '/')
+    }
+    setPrivacy(false)
+  }
   // ⌘K / Ctrl+K opens search from anywhere.
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -73,9 +94,11 @@ export default function App() {
       {s.ui.overlay === 'areas' && <ManageAreas mobile={mobile} />}
       {s.ui.pro && <ProScreen mobile={mobile} />}
       {s.pendingMigration && <LocalMigrationDialog mobile={mobile} />}
+      {deleteOpen && !s.account.demo && <DeleteAccountDialog mobile={mobile} onClose={() => setDeleteOpen(false)} />}
     </>
   )
-  if (!s.account.loggedIn) return <><AuthView mobile={mobile} /><Toast mobile={mobile} /></>
+  if (privacy) return <><PrivacyView mobile={mobile} loggedIn={s.account.loggedIn} onBack={closePrivacy} /><Toast mobile={mobile} /></>
+  if (!s.account.loggedIn) return <><AuthView mobile={mobile} onOpenPrivacy={openPrivacy} /><Toast mobile={mobile} /></>
   if (s.inviteToken) return <><InviteView mobile={mobile} /><Toast mobile={mobile} /></>
 
   // Composer state resets whenever the page changes.
@@ -121,7 +144,7 @@ export default function App() {
         </nav>
         {sel && <DetailSheet key={sel.id} task={sel} />}
         {quick && <QuickSheet onClose={() => setQuick(false)} />}
-        {profile && <ProfileSheet onClose={() => setProfile(false)} />}
+        {profile && <ProfileSheet onClose={() => setProfile(false)} onOpenPrivacy={() => { setProfile(false); openPrivacy() }} onDeleteAccount={() => { setProfile(false); setDeleteOpen(true) }} />}
         {overlays}
         <Toast mobile />
         <ReminderRunner />
@@ -131,7 +154,7 @@ export default function App() {
 
   return (
     <div className="flex h-full bg-bg">
-      <Sidebar collapsed={s.account.sidebar ?? !wide} />
+      <Sidebar collapsed={s.account.sidebar ?? !wide} onOpenPrivacy={openPrivacy} onDeleteAccount={() => setDeleteOpen(true)} />
       <div className="flex min-w-0 flex-1 flex-col">
         {s.account.demo && s.ui.banner && <DemoBanner />}
         <main key={pageKey} className={`animate-fade min-h-0 flex-1 overflow-auto ${s.ui.view === 'jadwal' ? 'px-14 pt-12 pb-10' : 'px-22 pt-16 pb-24'}`}>{page}</main>
@@ -144,7 +167,7 @@ export default function App() {
   )
 }
 
-function Sidebar({ collapsed }: { collapsed: boolean }) {
+function Sidebar({ collapsed, onOpenPrivacy, onDeleteAccount }: { collapsed: boolean; onOpenPrivacy: () => void; onDeleteAccount: () => void }) {
   const s = useStore()
   const toggle = () => s.setAccount({ sidebar: !collapsed })
   if (collapsed) return <SidebarRail onOpen={toggle} />
@@ -234,6 +257,24 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
         {s.account.demo && <button type="button" onClick={s.resetDemo} className="border-0 bg-transparent p-2 text-[12px] font-medium text-fg3">Reset</button>}
         <button type="button" onClick={s.signOut} className="border-0 bg-transparent p-2 text-[12px] font-medium text-fg3">Keluar</button>
       </div>
+      <div className="flex items-center justify-between px-3">
+        <a
+          href="/privasi"
+          onClick={(e) => { e.preventDefault(); onOpenPrivacy() }}
+          className="py-1 text-[12px] font-medium text-fg3 hover:text-fg"
+        >
+          Kebijakan privasi
+        </a>
+        {!s.account.demo && (
+          <button
+            type="button"
+            onClick={onDeleteAccount}
+            className="border-0 bg-transparent py-1 text-[12px] font-medium text-high hover:underline"
+          >
+            Hapus akun
+          </button>
+        )}
+      </div>
     </aside>
   )
 }
@@ -281,7 +322,7 @@ function ProfileButton({ onClick }: { onClick: () => void }) {
   return <button type="button" onClick={onClick} aria-label="Profil dan pengaturan" className="mt-2 size-20 rounded-full border-0 bg-accent text-[14px] font-semibold text-on-accent">{initial(s.account.name)}</button>
 }
 
-function ProfileSheet({ onClose }: { onClose: () => void }) {
+function ProfileSheet({ onClose, onOpenPrivacy, onDeleteAccount }: { onClose: () => void; onOpenPrivacy: () => void; onDeleteAccount: () => void }) {
   const s = useStore()
   const owned = s.projects.filter(p => !p.archived && s.isOwner(p)).length
   const vibrate = useTouch() && canVibrate
@@ -321,15 +362,98 @@ function ProfileSheet({ onClose }: { onClose: () => void }) {
           <span className="flex-1">Kelola area</span><span aria-hidden="true" className="text-fg3">›</span>
         </button>
         <div className={`${row} px-7 py-5`}><span className="flex-1 text-fg2">Warna aksen</span><AccentPicker /></div>
-        <button type="button" onClick={() => { onClose(); s.openPro() }} className="flex items-center gap-4 border-0 bg-transparent p-7 text-left text-fg">
+        <button type="button" onClick={() => { onClose(); s.openPro() }} className={`${row} border-x-0 border-t-0 bg-transparent p-7 text-left text-fg`}>
           <span className="flex-1">TaskFlow Pro</span>
           <span className="text-[12px] font-semibold text-accent">{s.account.plan === 'pro' ? 'Aktif' : s.account.demo ? 'Demo' : 'Lihat'}</span>
         </button>
+        <a
+          href="/privasi"
+          onClick={(e) => { e.preventDefault(); onOpenPrivacy() }}
+          className={`${!s.account.demo ? row : 'flex items-center gap-5'} p-7 text-left text-fg no-underline`}
+        >
+          <span className="flex-1">Kebijakan privasi</span><span aria-hidden="true" className="text-fg3">›</span>
+        </a>
+        {!s.account.demo && (
+          <button type="button" onClick={onDeleteAccount} className="flex items-center gap-5 border-0 bg-transparent p-7 text-left font-medium text-high">
+            <span className="flex-1">Hapus akun</span><span aria-hidden="true" className="text-high">›</span>
+          </button>
+        )}
       </div>
       {s.account.demo && <button type="button" onClick={() => { s.resetDemo(); onClose() }} className="h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg">Reset data demo</button>}
-      <button type="button" onClick={() => { onClose(); s.signOut() }} className="h-24 rounded-[12px] border border-line2 bg-transparent text-[15px] font-medium text-high">Keluar</button>
+      <button type="button" onClick={() => { onClose(); s.signOut() }} className="h-24 rounded-[12px] border border-line2 bg-transparent text-[15px] font-medium text-fg">Keluar</button>
     </Sheet>
   )
+}
+
+function DeleteAccountDialog({ mobile, onClose }: { mobile: boolean; onClose: () => void }) {
+  const s = useStore()
+  const [typed, setTyped] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const expected = s.account.name.trim()
+  const matched = expected.length > 0 && typed.trim() === expected
+
+  const submit = async () => {
+    if (!matched || busy) return
+    setBusy(true)
+    setErr('')
+    const res = await s.deleteAccount()
+    setBusy(false)
+    if (res.ok) {
+      onClose()
+    } else {
+      setErr(res.error)
+    }
+  }
+
+  const body = (
+    <>
+      <h2 className="m-0 font-display text-[20px] leading-tight font-semibold text-high">Hapus akun kamu?</h2>
+      <p className="m-0 text-[13.5px] leading-normal text-fg2">
+        Semua area, tugas lepas, dan proyek milikmu akan dihapus permanen. Kamu juga akan keluar dari proyek bersama milik orang lain. Tindakan ini tidak bisa dibatalkan.
+      </p>
+      <div className="flex flex-col gap-2.5">
+        <label htmlFor="delete-account-confirm" className="text-[13px] font-medium text-fg">
+          Ketik nama akunmu (<strong className="font-semibold">{expected}</strong>) untuk konfirmasi
+        </label>
+        <input
+          id="delete-account-confirm"
+          type="text"
+          value={typed}
+          disabled={busy}
+          autoComplete="off"
+          placeholder={expected}
+          onChange={(e) => { setTyped(e.target.value); if (err) setErr('') }}
+          className={`${mobile ? 'h-22 rounded-[12px] text-[16px]' : 'h-20 rounded-md text-[14px]'} w-full border border-line2 bg-bg px-6 text-fg outline-none focus:border-high`}
+        />
+      </div>
+      {err && <div role="alert" className="rounded-[8px] bg-high-soft px-6 py-4.5 text-[13px] text-high">{err}</div>}
+      <div className={mobile ? 'flex flex-col gap-3' : 'flex gap-4'}>
+        {!mobile && (
+          <button type="button" disabled={busy} onClick={onClose} className="h-20 flex-1 rounded-md border border-line2 bg-transparent text-[14px] font-medium text-fg disabled:opacity-50">
+            Batal
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={!matched || busy}
+          onClick={() => void submit()}
+          className={`${mobile ? 'h-24 rounded-[12px] text-[15px]' : 'h-20 flex-1 rounded-md text-[14px]'} border-0 bg-high font-semibold text-on-accent disabled:opacity-40`}
+        >
+          {busy ? 'Menghapus akun…' : 'Hapus akun permanen'}
+        </button>
+        {mobile && (
+          <button type="button" disabled={busy} onClick={onClose} className="h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg disabled:opacity-50">
+            Batal
+          </button>
+        )}
+      </div>
+    </>
+  )
+
+  return mobile
+    ? <Sheet onClose={busy ? () => {} : onClose} label="Hapus akun">{body}</Sheet>
+    : <Modal onClose={busy ? () => {} : onClose} label="Hapus akun" width={440}>{body}</Modal>
 }
 
 function LocalMigrationDialog({ mobile }: { mobile: boolean }) {

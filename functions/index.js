@@ -6,11 +6,15 @@ import {
   onDocumentUpdated,
   onDocumentWritten,
 } from 'firebase-functions/v2/firestore'
+import { onSchedule } from 'firebase-functions/v2/scheduler'
 import {
   BATCH_LIMIT,
+  auth,
+  cleanupProjectChildren,
   db,
   deleteDocsInBatches,
   processProjectTaskWrite,
+  reconcileAllCounters,
   trimProjectActivity,
 } from './core.js'
 
@@ -623,23 +627,7 @@ export const onProjectTaskWritten = onDocumentWritten(
 export const onProjectDeleted = onDocumentDeleted(
   { document: 'projects/{projectId}', region: REGION },
   async (event) => {
-    const { projectId } = event.params
-    const [tasksSnap, membersSnap, activitySnap, invitesSnap] = await Promise.all([
-      db.collection(`projects/${projectId}/tasks`).get(),
-      db.collection(`projects/${projectId}/members`).get(),
-      db.collection(`projects/${projectId}/activity`).get(),
-      db.collection('invites').where('projectId', '==', projectId).get(),
-    ])
-
-    const allDocs = [
-      ...tasksSnap.docs,
-      ...membersSnap.docs,
-      ...activitySnap.docs,
-      ...invitesSnap.docs,
-    ]
-    if (allDocs.length > 0) {
-      await deleteDocsInBatches(allDocs)
-    }
+    await cleanupProjectChildren(event.params.projectId)
   },
 )
 
@@ -688,3 +676,171 @@ export const onPlanChanged = onDocumentUpdated(
     }
   },
 )
+
+/**
+ * Daily safety net that reconciles users/{uid}.activeOwned and projects/{pid}.memberCount
+ * in <=500-op batches, writing only documents whose counters drifted (docs/BACKEND.md §3.3, §5).
+ */
+export const reconcileCounters = onSchedule(
+  { schedule: 'every day 03:00', timeZone: 'Asia/Jakarta', region: REGION },
+  async () => {
+    await reconcileAllCounters()
+  },
+)
+
+/**
+ * Permanently delete the signed-in user's account, personal data, owned projects (with tombstones),
+ * memberships in other users' projects (reassigning tasks back to each project owner), and Auth user.
+ * Strictly operates only on request.auth.uid and is idempotent on retry (HANDOFF-FASE3 K1, §4 3B).
+ */
+export const deleteAccount = onCall({ region: REGION }, async (request) => {
+  const uid = requireAuth(request)
+
+  const [ownedSnap, memberSnap] = await Promise.all([
+    db.collection('projects').where('ownerId', '==', uid).get(),
+    db.collection('projects').where('memberIds', 'array-contains', uid).get(),
+  ])
+
+  let ownedProjectsDeleted = 0
+  for (const projDoc of ownedSnap.docs) {
+    const projectId = projDoc.id
+    const projRef = db.doc(`projects/${projectId}`)
+    const deleted = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(projRef)
+      if (!snap.exists || snap.data()?.ownerId !== uid) return false
+      tx.delete(projRef)
+      tx.set(db.doc(`deletedProjects/${projectId}`), {
+        ownerId: uid,
+        deletedAt: FieldValue.serverTimestamp(),
+      })
+      return true
+    })
+    if (deleted) {
+      ownedProjectsDeleted += 1
+    }
+    await cleanupProjectChildren(projectId)
+  }
+
+  let leftProjectsCount = 0
+  for (const projDoc of memberSnap.docs) {
+    if (projDoc.data()?.ownerId === uid) continue
+    const projectId = projDoc.id
+    const projRef = db.doc(`projects/${projectId}`)
+
+    const leaveResult = await db.runTransaction(async (tx) => {
+      const projSnap = await tx.get(projRef)
+      if (!projSnap.exists) return null
+      const proj = projSnap.data() ?? {}
+      if (proj.ownerId === uid) return null
+
+      const ownerId = typeof proj.ownerId === 'string' ? proj.ownerId : ''
+      const curMembers = Array.isArray(proj.memberIds) ? proj.memberIds : []
+      const memberRef = db.doc(`projects/${projectId}/members/${uid}`)
+      const ownerRef = ownerId ? db.doc(`users/${ownerId}`) : null
+      const inviteRef =
+        typeof proj.inviteToken === 'string' && proj.inviteToken && !proj.inviteToken.includes('/')
+          ? db.doc(`invites/${proj.inviteToken}`)
+          : null
+
+      const [mSnap, ownerSnap, inviteSnap] = await Promise.all([
+        tx.get(memberRef),
+        ownerRef ? tx.get(ownerRef) : Promise.resolve(null),
+        inviteRef ? tx.get(inviteRef) : Promise.resolve(null),
+      ])
+
+      if (!curMembers.includes(uid) && !mSnap.exists) {
+        return { left: false, ownerId }
+      }
+
+      const memberName =
+        (mSnap.exists && typeof mSnap.data()?.name === 'string' && mSnap.data()?.name.trim().slice(0, 100)) ||
+        fallbackDisplayName(request.auth?.token)
+      const livePlan = ownerSnap?.exists && ownerSnap.data()?.plan === 'pro' ? 'pro' : 'free'
+      const limit = livePlan === 'pro' ? PRO_MEMBER_QUOTA : FREE_MEMBER_QUOTA
+
+      const nextMembers = curMembers.filter((id) => id !== uid)
+      const nextCount = nextMembers.length
+      const now = FieldValue.serverTimestamp()
+
+      tx.update(projRef, {
+        memberIds: nextMembers,
+        memberCount: nextCount,
+        ownerPlan: livePlan,
+        updatedAt: now,
+      })
+
+      if (mSnap.exists) {
+        tx.delete(memberRef)
+      }
+
+      if (inviteSnap?.exists && inviteSnap.data()?.active === true) {
+        tx.update(inviteRef, {
+          memberCount: nextCount,
+          full: nextCount >= limit,
+          updatedAt: now,
+        })
+      }
+
+      const actRef = db.collection(`projects/${projectId}/activity`).doc()
+      tx.create(actRef, {
+        type: 'member_left',
+        actorId: uid,
+        actorName: memberName,
+        targetId: uid,
+        text: `${memberName} keluar dari proyek`,
+        createdAt: now,
+      })
+
+      return { left: true, ownerId }
+    })
+
+    if (leaveResult?.ownerId) {
+      const tasksSnap = await db
+        .collection(`projects/${projectId}/tasks`)
+        .where('assignee', '==', uid)
+        .get()
+      for (let i = 0; i < tasksSnap.docs.length; i += BATCH_LIMIT) {
+        const batch = db.batch()
+        const now = FieldValue.serverTimestamp()
+        for (const taskDoc of tasksSnap.docs.slice(i, i + BATCH_LIMIT)) {
+          batch.update(taskDoc.ref, { assignee: leaveResult.ownerId, updatedAt: now })
+        }
+        await batch.commit()
+      }
+    }
+
+    if (leaveResult?.left) {
+      leftProjectsCount += 1
+      await trimProjectActivity(projectId)
+    }
+  }
+
+  const [areasSnap, tasksSnap, remsSnap, notifiedSnap] = await Promise.all([
+    db.collection(`users/${uid}/areas`).select().get(),
+    db.collection(`users/${uid}/tasks`).select().get(),
+    db.collection(`users/${uid}/reminders`).select().get(),
+    db.collection(`users/${uid}/notified`).select().get(),
+  ])
+
+  const userSubDocs = [
+    ...areasSnap.docs,
+    ...tasksSnap.docs,
+    ...remsSnap.docs,
+    ...notifiedSnap.docs,
+  ]
+  if (userSubDocs.length > 0) {
+    await deleteDocsInBatches(userSubDocs)
+  }
+
+  await db.doc(`users/${uid}`).delete()
+
+  try {
+    await auth.deleteUser(uid)
+  } catch (err) {
+    if (!err || typeof err !== 'object' || err.code !== 'auth/user-not-found') {
+      throw err
+    }
+  }
+
+  return { deleted: true, ownedProjectsDeleted, leftProjectsCount }
+})
