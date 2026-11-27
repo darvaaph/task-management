@@ -3,7 +3,7 @@ import { useStore, type ProCtx } from '../store'
 import { Modal, Sheet } from './ui'
 
 export const ProBadge = ({ label = 'PRO' }: { label?: string }) => (
-  <span className="rounded-[4px] bg-accent-soft px-2.5 py-1 font-mono text-[9.5px] font-semibold tracking-[.06em] text-accent">{label}</span>
+  <span className="rounded-[4px] bg-accent-soft px-2.5 py-1 font-mono text-[10px] font-semibold tracking-[.06em] text-accent">{label}</span>
 )
 
 const CTX: Partial<Record<ProCtx, string>> = {
@@ -129,7 +129,7 @@ export function AccentPicker() {
             aria-pressed={on}
             aria-label={locked ? `${a.name} (Pro)` : a.name}
             onClick={() => (locked ? s.openPro('accent') : s.setAccount({ accent: a.id }))}
-            className="grid size-15 place-items-center rounded-full border-2 bg-transparent p-0"
+            className="grid size-15 place-items-center rounded-full border-2 bg-transparent p-0 max-md:size-18"
             style={{ borderColor: on ? 'var(--fg)' : 'transparent' }}
           >
             <span aria-hidden="true" className="size-10 rounded-full" style={{ background: a.c, opacity: locked ? 0.4 : 1 }} />

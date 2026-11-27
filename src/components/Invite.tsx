@@ -73,7 +73,7 @@ export function InviteView({ mobile }: { mobile: boolean }) {
         ) : (
           <>
             <div className="flex flex-col gap-2">
-              <span className="text-[13.5px] text-fg2">{inv.ownerName} mengundang Anda ke</span>
+              <span className="text-[13.5px] text-fg2">{inv.ownerName} mengundang kamu ke</span>
               <h1 className="m-0 font-display text-[24px] leading-[1.15] font-semibold text-fg">{inv.projectName}</h1>
               <span className="text-[13px] text-fg3">
                 {inv.memberCount} anggota · tenggat {inv.due ? fmt(inv.due) : '—'}
@@ -119,7 +119,7 @@ export function PickMemberAreaCard({ mobile, projectName }: { mobile: boolean; p
       <div className="flex flex-col gap-2">
         <h2 className="m-0 font-display text-[17px] leading-tight font-semibold">Masukkan ke area mana?</h2>
         <p className="m-0 text-[13.5px] leading-normal text-fg2">
-          Pilih area di akun Anda untuk proyek “{projectName}”. Pilihan ini hanya terlihat oleh Anda.
+          Pilih area di akun kamu untuk proyek “{projectName}”. Pilihan ini hanya terlihat oleh kamu.
         </p>
       </div>
       <div className={`flex gap-3 ${mobile ? 'flex-col' : 'flex-wrap items-center'}`}>
@@ -132,7 +132,7 @@ export function PickMemberAreaCard({ mobile, projectName }: { mobile: boolean; p
             ))}
           </div>
         ) : (
-          <span className="text-[13px] text-fg3">Belum ada area di akun Anda.</span>
+          <span className="text-[13px] text-fg3">Belum ada area di akun kamu.</span>
         )}
         {!mobile && <span className="flex-1" />}
         <button

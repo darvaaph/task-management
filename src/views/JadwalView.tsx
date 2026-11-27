@@ -559,7 +559,7 @@ export function Timeline({ mobile, projectId }: { mobile?: boolean; projectId?: 
   const editBar = (
     <div className={`flex items-center gap-5 ${mobile ? 'px-10' : ''}`}>
       <span className="flex-1 text-[12.5px] text-fg3">{edit ? 'Mode ubah aktif: geser batang atau tarik ujung kanannya' : 'Geser layar untuk melihat. Ketuk Ubah jadwal untuk memindah batang.'}</span>
-      <button type="button" aria-pressed={edit} onClick={() => setEdit(!edit)} className={`h-17 flex-none whitespace-nowrap rounded-pill border px-6.5 text-[13px] font-medium ${edit ? 'border-accent bg-accent text-on-accent' : 'border-line2 bg-transparent text-fg'}`}>{edit ? 'Selesai' : 'Ubah jadwal'}</button>
+      <button type="button" aria-pressed={edit} onClick={() => setEdit(!edit)} className={`h-17 flex-none whitespace-nowrap rounded-pill border px-6.5 max-md:h-18 text-[13px] font-medium ${edit ? 'border-accent bg-accent text-on-accent' : 'border-line2 bg-transparent text-fg'}`}>{edit ? 'Selesai' : 'Ubah jadwal'}</button>
     </div>
   )
 

@@ -121,6 +121,7 @@ Jangan pakai nilai Tailwind "biasa" (`p-4` ≠ 16px di sini). Ukuran yang tidak 
 - Semua batas harus divalidasi ulang di server begitu backend ada (PRD §3).
 
 ### 8. Bahasa dan teks
+- Sapaan selalu **"kamu"** (akhiran "-mu"), tidak memakai "Anda".
 - Seluruh antarmuka berbahasa Indonesia. Istilah yang dibiarkan: Inbox, Timeline, Board, List, Pro.
 - Status: **Belum · Dikerjakan · Selesai**. Prioritas: **Tinggi · Sedang · Rendah**.
 - Pakai "proyek", "arsip", "bagian", "bersama", "bagikan" — bukan project/archives/section/shared/share.

@@ -2,11 +2,10 @@ import { useState, type ReactNode } from 'react'
 import { AREA_COLORS } from '../lib/constants'
 import type { Project } from '../lib/types'
 import { useStore } from '../store'
-import { Chip, Modal, Sheet } from './ui'
+import { Chip, Modal, Sheet, DateField } from './ui'
 
 const lbl = 'text-label text-fg3'
 const field = 'rounded-[8px] border border-line bg-bg px-5 text-[14px] text-fg outline-none'
-const dateInput = 'h-18 rounded-[8px] border border-line2 bg-bg px-4 text-[13px] font-medium text-fg'
 
 function Frame({ mobile, label, onClose, children, width }: { mobile: boolean; label: string; onClose: () => void; children: ReactNode; width: number }) {
   return mobile
@@ -19,7 +18,7 @@ function Header({ title, onDone, note }: { title: string; onDone: () => void; no
     <>
       <div className="flex items-center gap-5">
         <h2 className="m-0 flex-1 font-display text-[20px] font-semibold">{title}</h2>
-        <button type="button" onClick={onDone} className="h-17 rounded-[8px] border-0 bg-fg px-8 text-[13px] font-semibold text-bg">Selesai</button>
+        <button type="button" onClick={onDone} className="h-17 rounded-[8px] border-0 bg-fg px-8 text-[13px] font-semibold text-bg max-md:h-18">Selesai</button>
       </div>
       <div className="-mt-4 text-[12.5px] leading-normal text-fg3">{note}</div>
     </>
@@ -66,14 +65,14 @@ export function ManageProject({ project: P, mobile }: { project: Project; mobile
       {owner && (
         <>
           <div className="flex flex-wrap gap-6">
-            <label className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4">
               <span className={lbl}>MULAI</span>
-              <input type="date" value={P.start} onChange={e => { const v = e.target.value; if (v) s.updateProject(P.id, { start: v, due: v > P.due ? v : P.due }) }} aria-label="Tanggal mulai" className={dateInput} />
-            </label>
-            <label className="flex flex-col gap-4">
+              <DateField label="Tanggal mulai" value={P.start} onChange={v => s.updateProject(P.id, { start: v, due: v > P.due ? v : P.due })} className="h-18" />
+            </div>
+            <div className="flex flex-col gap-4">
               <span className={lbl}>TENGGAT</span>
-              <input type="date" value={P.due} onChange={e => { const v = e.target.value; if (v) s.updateProject(P.id, { due: v, start: v < P.start ? v : P.start }) }} aria-label="Tanggal tenggat" className={dateInput} />
-            </label>
+              <DateField label="Tanggal tenggat" value={P.due} onChange={v => s.updateProject(P.id, { due: v, start: v < P.start ? v : P.start })} className="h-18" />
+            </div>
           </div>
           <div className="flex flex-col gap-3">
             <span className={lbl}>BAGIAN</span>
@@ -95,7 +94,7 @@ export function ManageProject({ project: P, mobile }: { project: Project; mobile
             ) : (
               <div role="alert" className="flex flex-col gap-4 rounded-md bg-high-soft p-6">
                 <span className="text-[13px] leading-[1.45] text-fg">
-                  {pt.length ? `Hapus "${P.name}" beserta ${pt.length} tugasnya?` : `Hapus "${P.name}"?`} Anda masih bisa mengurungkannya beberapa detik setelah ini.
+                  {pt.length ? `Hapus "${P.name}" beserta ${pt.length} tugasnya?` : `Hapus "${P.name}"?`} Kamu masih bisa mengurungkannya beberapa detik setelah ini.
                 </span>
                 <div className="flex gap-4">
                   <button type="button" onClick={() => setConfirm(false)} className="h-19 flex-1 rounded-[8px] border border-line2 bg-surface text-[13px] font-medium text-fg">Batal</button>

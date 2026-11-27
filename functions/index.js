@@ -92,7 +92,7 @@ function fallbackDisplayName(authToken) {
  * forge plan/quota fields (docs/BACKEND.md §2.1, §3.1).
  */
 export const onUserCreated = region(REGION).auth.user().onCreate(async (user) => {
-  const fallbackName = user.email ? user.email.split('@')[0] : 'Anda'
+  const fallbackName = user.email ? user.email.split('@')[0] : 'Kamu'
   const name = (user.displayName?.trim() || fallbackName).slice(0, 100)
   const ref = db.doc(`users/${user.uid}`)
 
@@ -269,7 +269,7 @@ export const setProjectArchived = onCall({ region: REGION }, async (request) => 
 
     // Identical error for missing vs non-owned project to avoid leaking project existence.
     if (!projSnap.exists || projSnap.data()?.ownerId !== uid) {
-      throw new HttpsError('permission-denied', 'Anda tidak memiliki akses untuk mengelola proyek ini.')
+      throw new HttpsError('permission-denied', 'Kamu tidak memiliki akses untuk mengelola proyek ini.')
     }
     if (!userSnap.exists) {
       throw new HttpsError('failed-precondition', 'Profil akun belum siap. Coba lagi sebentar.')
@@ -319,7 +319,7 @@ export const deleteProject = onCall({ region: REGION }, async (request) => {
     ])
 
     if (!projSnap.exists || projSnap.data()?.ownerId !== uid) {
-      throw new HttpsError('permission-denied', 'Anda tidak memiliki akses untuk menghapus proyek ini.')
+      throw new HttpsError('permission-denied', 'Kamu tidak memiliki akses untuk menghapus proyek ini.')
     }
 
     const wasArchived = projSnap.data()?.archived === true

@@ -7,7 +7,7 @@ import { ProBadge } from './Pro'
 import { NotifyHint } from './Reminders'
 import { useStore } from '../store'
 import { DestButton, DestList } from './DestPicker'
-import { AutoTextarea, Avatar, Chip, PrioPicker, Sheet, useEscape } from './ui'
+import { AutoTextarea, Avatar, Chip, DateChip, DateField, PrioPicker, Sheet, openPicker, useEscape } from './ui'
 
 const input = 'rounded-[8px] border border-line2 bg-bg px-4 text-[13px] font-medium text-fg'
 
@@ -33,7 +33,7 @@ function CheckButton({ t, size }: { t: Task; size: number }) {
       aria-pressed={done}
       onClick={() => { if (!done) setPop(true); s.toggleTask(t.id) }}
       onAnimationEnd={() => setPop(false)}
-      className={`mt-0.5 grid flex-none place-items-center rounded-full p-0 text-[12px] font-bold text-bg transition-colors duration-(--dur-fast) ${pop ? 'animate-pop' : ''}`}
+      className={`relative max-md:before:absolute max-md:before:-inset-3 mt-0.5 grid flex-none place-items-center rounded-full p-0 text-[12px] font-bold text-bg transition-colors duration-(--dur-fast) ${pop ? 'animate-pop' : ''}`}
       style={{ width: size, height: size, border: `1.6px solid ${done ? 'var(--fg3)' : PRIO[t.prio].c}`, background: done ? 'var(--fg3)' : 'transparent' }}
     >
       {done ? '✓' : ''}
@@ -68,7 +68,7 @@ function DueChips({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }
   return (
     <div className="flex flex-wrap gap-2.5">
       {opts.map(([l, v]) => <Chip key={l} size={big ? 'lg' : 'sm'} active={d.t.due === v} onClick={() => d.setDue(v)}>{l}</Chip>)}
-      <input type="date" value={d.t.due ?? ''} onChange={e => d.setDue(e.target.value || null)} aria-label="Pilih tanggal" className={`${input} ${big ? 'h-18' : 'h-14'}`} />
+      <DateChip size={big ? 'lg' : 'sm'} value={d.t.due} custom={d.t.due != null && !opts.some(([, v]) => v === d.t.due)} onChange={d.setDue} />
     </div>
   )
 }
@@ -104,27 +104,27 @@ const startHint = (t: Task) => (t.start && t.due ? `${diffDays(t.due, t.start) +
 
 const DURS: [number | null, string][] = [[null, 'Tanpa'], [15, '15 mnt'], [30, '30 mnt'], [60, '1 jam'], [120, '2 jam'], [180, '3 jam']]
 const RECS: [Recurrence | null, string, boolean][] = [[null, 'Tidak', false], ['daily', 'Harian', false], ['weekly', 'Mingguan', false], ['weekdays', 'Hari kerja', true], ['monthly', 'Bulanan', true]]
-const REM_TIMED: [string, string][] = [['m10', '10 mnt sebelum'], ['m30', '30 mnt sebelum'], ['h1', '1 jam sebelum'], ['d1', 'H-1, 09:00']]
-const REM_DAY: [string, string][] = [['d0', 'Hari H, 09:00'], ['d1', 'H-1, 09:00'], ['d3', 'H-3, 09:00']]
+export const REM_TIMED: [string, string][] = [['m10', '10 mnt sebelum'], ['m30', '30 mnt sebelum'], ['h1', '1 jam sebelum'], ['d1', 'H-1, 09:00']]
+export const REM_DAY: [string, string][] = [['d0', 'Hari H, 09:00'], ['d1', 'H-1, 09:00'], ['d3', 'H-3, 09:00']]
 
 // Written from the minutes, not the chip list: demo data (and later imports) can hold lengths like 90 min.
 const fmtDur = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} jam${m % 60 ? ` ${m % 60} mnt` : ''}` : `${m} mnt`)
 const durLabel = (t: Task) => (!t.time ? 'Atur jam dulu' : t.dur ? fmtDur(t.dur) : 'Tanpa')
-const recLabel = (t: Task) => RECS.find(([v]) => v === (t.rec ?? null))?.[1] ?? 'Tidak'
-const remLabel = (t: Task) => {
+export const recLabel = (t: Pick<Task, 'rec'>) => RECS.find(([v]) => v === (t.rec ?? null))?.[1] ?? 'Tidak'
+export const remLabel = (t: Pick<Task, 'rems' | 'due' | 'time'>) => {
   if (!t.due) return 'Atur tanggal dulu'
   const names = remindersOf(t).map(k => [...REM_TIMED, ...REM_DAY].find(([x]) => x === k)?.[1]).filter(Boolean)
   return names.length ? names.join(', ') : 'Tidak ada'
 }
 
 /** Phone: a date or time row that shows its value and opens the device's own picker on tap. */
-function PickerRow({ label, type, value, shown, onChange, onClear }: { label: string; type: 'date' | 'time'; value: string | null; shown: string; onChange: (v: string | null) => void; onClear: () => void }) {
+export function PickerRow({ label, type, value, shown, onChange, onClear }: { label: string; type: 'date' | 'time'; value: string | null; shown: string; onChange: (v: string | null) => void; onClear: () => void }) {
   const ref = useRef<HTMLInputElement>(null)
   return (
     <div className="flex min-h-22 items-center gap-4 border-t border-line pr-4 pl-7 text-[14px]">
       <span className="flex-none text-fg2">{label}</span>
       <span className="flex-1" />
-      {value && <button type="button" onClick={onClear} className="border-0 bg-transparent p-3 text-[13px] font-medium text-fg3">Hapus</button>}
+      {value && <button type="button" onClick={onClear} className="h-18 border-0 bg-transparent px-3 text-[13px] font-medium text-fg3">Hapus</button>}
       <span className="relative">
         <button type="button" onClick={() => openPicker(ref.current)} className={`h-18 rounded-pill border-0 px-6 text-[14px] font-medium ${value ? 'bg-surface2 text-fg' : 'bg-transparent text-fg3'}`}>{shown}</button>
         <input ref={ref} type={type} value={value ?? ''} onChange={e => onChange(e.target.value || null)} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0" />
@@ -133,30 +133,19 @@ function PickerRow({ label, type, value, shown, onChange, onClear }: { label: st
   )
 }
 
-// The raw date field shows the browser's own format ("25-Nov-2026"); a chip that opens the picker keeps the app's wording.
-const openPicker = (el: HTMLInputElement | null) => {
-  if (!el) return
-  try { el.showPicker() } catch { el.focus(); el.click() }
-}
-
 /** Phone: quick date chips plus "Pilih tanggal…", which opens the device calendar. */
 function DueChipsPhone({ d }: { d: ReturnType<typeof useDetail> }) {
-  const ref = useRef<HTMLInputElement>(null)
   const opts: [string, string | null][] = [['Hari ini', today()], ['Besok', addDays(today(), 1)], ['Senin depan', nextMonday()], ['Tanpa tanggal', null]]
-  const custom = d.t.due != null && !opts.some(([, v]) => v === d.t.due)
   return (
     <div className="flex flex-wrap gap-2.5">
       {opts.map(([l, v]) => <Chip key={l} size="lg" active={d.t.due === v} onClick={() => d.setDue(v)}>{l}</Chip>)}
-      <span className="relative">
-        <Chip size="lg" active={custom} onClick={() => openPicker(ref.current)}>{custom ? fmt(d.t.due) : 'Pilih tanggal…'}</Chip>
-        <input ref={ref} type="date" value={d.t.due ?? ''} onChange={e => d.setDue(e.target.value || null)} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0" />
-      </span>
+      <DateChip size="lg" value={d.t.due} custom={d.t.due != null && !opts.some(([, v]) => v === d.t.due)} onChange={d.setDue} />
     </div>
   )
 }
 
 /** Phone: a setting that shows its current value and opens its chips on tap, so the sheet stays short. */
-function FoldRow({ label, value, open, onToggle, children }: { label: string; value: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function FoldRow({ label, value, open, onToggle, children }: { label: string; value: string; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <div className="flex flex-col border-t border-line">
       <button type="button" aria-expanded={open} onClick={onToggle} className="flex min-h-22 items-center gap-4 border-0 bg-transparent py-3 pr-6 pl-7 text-left text-[14px]">
@@ -192,7 +181,15 @@ function Duration({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }
   )
 }
 
-function Repeat({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
+/** What Repeat and Reminders need: a saved task in detail, or the unsaved draft in the composer. */
+export type RuleDraft = {
+  s: ReturnType<typeof useStore>
+  t: Pick<Task, 'rec' | 'rems' | 'due' | 'time'>
+  proj: ReturnType<typeof useDetail>['proj']
+  upd: (patch: Partial<Task>) => void
+}
+
+export function Repeat({ d, big }: { d: RuleDraft; big?: boolean }) {
   const proOk = d.proj ? d.s.isProFor(d.proj) : d.s.isPro
   return (
     <div className="flex flex-wrap gap-2.5">
@@ -206,7 +203,7 @@ function Repeat({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) 
 }
 
 /** Free: one reminder (picking another replaces it). Pro: several. */
-function Reminders({ d, big }: { d: ReturnType<typeof useDetail>; big?: boolean }) {
+export function Reminders({ d, big }: { d: RuleDraft; big?: boolean }) {
   if (!d.t.due) return <span className="text-[13px] text-fg3">Atur tanggal dulu untuk memasang pengingat.</span>
   const cur = remindersOf(d.t)
   const proOk = d.proj ? d.s.isProFor(d.proj) : d.s.isPro
@@ -296,7 +293,7 @@ export function DetailPanel({ task, floating }: { task: Task; floating?: boolean
         </Row>
         <Row label="Mulai">
           <div className="flex flex-wrap items-center gap-4">
-            <input type="date" value={t.start ?? ''} onChange={e => { const v = e.target.value || null; d.upd({ start: v, due: v && (!t.due || t.due < v) ? v : t.due }) }} aria-label="Tanggal mulai" className={`${input} h-15`} />
+            <DateField label="Tanggal mulai" value={t.start} onChange={v => d.upd({ start: v, due: !t.due || t.due < v ? v : t.due })} className="h-15" />
             {t.start && <button type="button" onClick={() => d.upd({ start: null })} className="border-0 bg-transparent text-[12px] font-medium text-fg3">Hapus</button>}
             <span className="text-[12px] text-fg3">{startHint(t)}</span>
           </div>

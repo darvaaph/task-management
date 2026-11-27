@@ -122,7 +122,7 @@ Tiga opsi arsitektur telah dibandingkan:
 - Pengguna dapat menekan tombol **"Salin jadi Tugas"** pada acara Google Calendar untuk menjadikannya tugas yang bisa dicentang di aplikasi.
 
 ### 5.7 Mode Demo Portofolio (*Recruiter Sandbox*)
-- **Penyimpanan Lokal Instan:** Membuka tautan **`/demo`** langsung membuka aplikasi berisi data contoh (*Areas: Kuliah, Kantor, Pribadi; Tugas Lepas; Project Pribadi; serta simulasi Project Kelompok berisi anggota dummy seperti "Anda", "Budi", "Siti"* `[Keputusan Desain]`) yang tersimpan di penyimpanan lokal browser (`localStorage`/IndexedDB) tanpa perlu daftar akun dan tanpa menulis ke database cloud.
+- **Penyimpanan Lokal Instan:** Membuka tautan **`/demo`** langsung membuka aplikasi berisi data contoh (*Areas: Kuliah, Kantor, Pribadi; Tugas Lepas; Project Pribadi; serta simulasi Project Kelompok berisi anggota dummy seperti "Kamu", "Budi", "Siti"* `[Keputusan Desain]`) yang tersimpan di penyimpanan lokal browser (`localStorage`/IndexedDB) tanpa perlu daftar akun dan tanpa menulis ke database cloud.
 - **Akses Fitur di Demo Mode:** Seluruh tampilan termasuk **Timeline View** dibuka dengan label **"Demo Preview"** agar *recruiter* dapat merasakan kualitas UI/UX penuhnya, sementara tombol aksi *Upgrade Pro* membuka **simulasi modal Checkout Pro** yang aman tanpa transaksi uang sungguhan (ditambah banner halus *"Data Demo hanya tersimpan di browser ini — Daftar gratis untuk menyimpan ke cloud & Share Project sungguhan"*).
 
 ### 5.8 Ringkasan Matriks Gratis vs. Pro (*Sekali Bayar / Lifetime*)

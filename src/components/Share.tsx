@@ -131,7 +131,7 @@ export function ShareProject({ project: P, mobile }: { project: Project; mobile:
             <LogoMark size={18} />
             <span className="font-display text-[14px] font-semibold">TaskFlow</span>
           </div>
-          <span className="text-[13px] text-fg2">{s.account.name} mengundang Anda ke</span>
+          <span className="text-[13px] text-fg2">{s.account.name} mengundang kamu ke</span>
           <span className="font-display text-[20px] leading-[1.2] font-semibold">{P.name}</span>
           <span className="text-[12.5px] text-fg3">{inviteMeta}</span>
           {!full ? (

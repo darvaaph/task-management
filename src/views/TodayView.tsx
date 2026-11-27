@@ -63,7 +63,7 @@ export function TodayView({ mobile, onSearchProfile }: { mobile: boolean; onSear
       <div className={`flex items-center gap-5 ${mobile ? 'px-4 pb-3' : 'px-3 pb-3'}`}>
         <SectionLabel tone="high">TERLAMBAT ({overdue.length})</SectionLabel>
         <span className="flex-1 text-[12.5px] text-fg2">{mobile ? '' : 'Tidak apa-apa. Pindahkan ke hari ini dan lanjutkan.'}</span>
-        <button type="button" onClick={s.moveAllOverdue} className="whitespace-nowrap rounded-[8px] border-0 bg-high px-6 py-3.5 text-[12.5px] font-semibold text-white">
+        <button type="button" onClick={s.moveAllOverdue} className="whitespace-nowrap rounded-[8px] border-0 bg-high px-6 py-3.5 text-[12.5px] font-semibold text-white max-md:h-18">
           {mobile ? 'Geser semua' : 'Geser semua ke Hari Ini'}
         </button>
       </div>

@@ -71,7 +71,7 @@ export interface StoredState {
 export const ACCOUNT0: Account = {
   loggedIn: false,
   demo: false,
-  name: 'Anda',
+  name: 'Kamu',
   plan: 'free',
   accent: 'indigo',
   onboarding: false,
@@ -262,6 +262,8 @@ export function loadLocalStore(): {
     if (s?.data?.tasks) {
       const rootData = normalizeData(s.data)
       const account: Account = { ...ACCOUNT0, ...s.account }
+      // Earlier builds saved the formal default name; Google accounts keep whatever name they have.
+      if (account.name === 'Anda' && !account.uid) account.name = ACCOUNT0.name
       const byUid = s.byUid && typeof s.byUid === 'object'
         ? normalizeByUid(s.byUid)
         : account.uid && !account.demo

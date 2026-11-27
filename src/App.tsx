@@ -28,7 +28,7 @@ const NAV: { view: View; label: string; Icon: typeof IconToday }[] = [
   { view: 'projects', label: 'Proyek', Icon: IconFolder },
 ]
 const planLabel = (a: Store['account']) => (a.demo ? 'Mode Demo' : a.plan === 'pro' ? 'Pro · selamanya' : 'Gratis')
-const initial = (name: string) => (name.trim()[0] || 'A').toUpperCase()
+const initial = (name: string) => (name.trim()[0] || 'K').toUpperCase()
 
 const ONOFF = [{ value: 'off' as const, label: 'Mati' }, { value: 'on' as const, label: 'Nyala' }]
 const onoff = (v?: boolean) => (v ? 'on' : 'off')
@@ -271,7 +271,7 @@ function DemoBanner({ mobile }: { mobile?: boolean }) {
     <div className="flex flex-none items-center gap-5 bg-accent-soft px-10 py-4.5 text-[12.5px] text-fg2">
       <span className="font-mono text-[10px] font-semibold tracking-[.06em] text-accent">MODE DEMO</span>
       <span className="flex-1">{mobile ? 'Data demo hanya tersimpan di perangkat ini.' : 'Data Demo hanya tersimpan di browser ini — Daftar gratis untuk menyimpan ke cloud & bagikan proyek sungguhan.'}</span>
-      <button type="button" onClick={() => s.setUI({ banner: false })} className="border-0 bg-transparent text-[12.5px] text-fg2">Tutup</button>
+      <button type="button" onClick={() => s.setUI({ banner: false })} className="border-0 bg-transparent text-[12.5px] text-fg2 max-md:h-18 max-md:px-4">Tutup</button>
     </div>
   )
 }
@@ -344,10 +344,10 @@ function LocalMigrationDialog({ mobile }: { mobile: boolean }) {
   const onDismiss = s.migrating ? s.abortMigration : s.skipMigration
   const body = (
     <>
-      <h2 className="m-0 font-display text-[20px] leading-tight font-semibold">Pindahkan data di perangkat ini ke akun Anda?</h2>
+      <h2 className="m-0 font-display text-[20px] leading-tight font-semibold">Pindahkan data di perangkat ini ke akun kamu?</h2>
       <p className="m-0 text-[13.5px] leading-normal text-fg2">
         {m.projects.length > 0
-          ? `Ditemukan ${parts.join(', ')} di perangkat ini. PIC tugas yang ditugaskan ke Anda ikut dipindahkan, sedangkan nama contoh dikosongkan. Proyek yang melebihi kuota tetap tersimpan di perangkat ini.`
+          ? `Ditemukan ${parts.join(', ')} di perangkat ini. PIC tugas yang ditugaskan ke kamu ikut dipindahkan, sedangkan nama contoh dikosongkan. Proyek yang melebihi kuota tetap tersimpan di perangkat ini.`
           : `Ditemukan ${parts.join(' dan ')} di browser ini.`}
       </p>
       {s.migrating && s.migrationStatus && (

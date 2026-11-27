@@ -65,7 +65,7 @@ export function seed(): Data {
     activity: [
       { p: 'pitch', text: 'Budi menyelesaikan "Review desain UI"', ts: Date.now() - 3 * 3600e3 },
       { p: 'uas', text: 'Siti memindah "Tulis bab 3 metodologi" ke Dikerjakan', ts: Date.now() - 2 * 864e5 },
-      { p: 'uas', text: 'Anda menyelesaikan "Susun outline bab 1"', ts: Date.now() - 4 * 864e5 },
+      { p: 'uas', text: 'Kamu menyelesaikan "Susun outline bab 1"', ts: Date.now() - 4 * 864e5 },
       { p: 'uas', text: 'Siti menyelesaikan "Kumpulkan referensi jurnal"', ts: Date.now() - 5 * 864e5 },
     ],
   }

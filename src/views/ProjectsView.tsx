@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Avatar, Chip, EmptyCard, Modal, ProgressBar, Segmented, Sheet, btnPrimary } from '../components/ui'
+import { Avatar, Chip, EmptyCard, Modal, ProgressBar, Segmented, Sheet, btnPrimary, DateChip } from '../components/ui'
 import { FREE_PROJECT_QUOTA } from '../lib/constants'
 import { addDays, fmt, today } from '../lib/dates'
 import { areaOf, daysLeftLabel, projectProgress } from '../lib/logic'
@@ -171,14 +171,7 @@ function NewProject({ mobile, onClose }: { mobile: boolean; onClose: () => void 
             const d = addDays(t0, w * 7)
             return <Chip key={w} size={mobile ? 'lg' : 'md'} active={due === d} onClick={() => setDue(d)}>{`${w} minggu · ${fmt(d)}`}</Chip>
           })}
-          <input
-            type="date"
-            value={due}
-            min={t0}
-            onChange={e => e.target.value && setDue(e.target.value)}
-            aria-label="Tanggal tenggat"
-            className={`${mobile ? 'h-18' : 'h-16'} rounded-[8px] border border-line2 bg-bg px-4 text-[13px] font-medium text-fg`}
-          />
+          <DateChip size={mobile ? 'lg' : 'md'} value={due} min={t0} custom={![1, 2, 3].some(w => addDays(t0, w * 7) === due)} onChange={v => v && setDue(v)} />
         </div>
       </div>
       <div className={`text-[12.5px] ${full ? 'text-high' : 'text-fg3'}`}>

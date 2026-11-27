@@ -7,7 +7,7 @@ import { feedback } from '../lib/feedback'
 import { areaOf, isOverdue } from '../lib/logic'
 import type { Task } from '../lib/types'
 import { useStore } from '../store'
-import { Avatar, Chip, Modal, PrioBadge, Sheet } from './ui'
+import { Avatar, Chip, DateChip, Modal, PrioBadge, Sheet } from './ui'
 
 /** Pixels at the left screen edge left alone, so iOS "swipe back" still works. */
 const EDGE = 20
@@ -77,10 +77,8 @@ function ScheduleDialog({ task: t, onClose }: { task: Task; onClose: () => void 
       <div className="truncate text-body font-medium text-fg">{t.title}</div>
       <div className="flex flex-wrap gap-3">
         {opts.map(([l, v]) => <Chip key={l} size="lg" active={t.due === v} onClick={() => pick(v)}>{l}</Chip>)}
+        <DateChip size="lg" value={t.due} custom={t.due != null && !opts.some(([, v]) => v === t.due)} onChange={v => v && pick(v)} />
       </div>
-      <label className="flex flex-col gap-3 text-[13px] text-fg2">Pilih tanggal
-        <input type="date" value={t.due ?? ''} onChange={e => e.target.value && pick(e.target.value)} className="h-20 rounded-[8px] border border-line2 bg-bg px-5 text-[14px] font-medium text-fg" />
-      </label>
     </>
   )
   return createPortal(phone ? <Sheet onClose={onClose} label="Jadwalkan tugas">{body}</Sheet> : <Modal onClose={onClose} label="Jadwalkan tugas" width={380}>{body}</Modal>, document.body)
@@ -160,7 +158,7 @@ export function TaskRow({ task: t, compact }: { task: Task; compact?: boolean })
             <button
               type="button"
               onClick={e => { e.stopPropagation(); s.moveToToday(t.id) }}
-              className="flex-none whitespace-nowrap rounded-sm border-0 bg-high-soft px-4 py-3 text-[11.5px] font-semibold text-high"
+              className="flex-none whitespace-nowrap rounded-sm border-0 bg-high-soft px-4 py-3 text-[11.5px] font-semibold text-high max-md:h-18 max-md:px-5"
             >
               {compact ? 'Geser' : `${rel(t.due)} · Geser ke Hari Ini`}
             </button>

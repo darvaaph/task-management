@@ -94,7 +94,7 @@ export const hoursOf = (hhmm: string) => {
 }
 
 /** Reminder keys of a task; without a choice it gets the default (30 min before, or 09:00 on the day). */
-export const remindersOf = (t: Task) => t.rems ?? (t.due == null ? [] : [t.time ? 'm30' : 'd0'])
+export const remindersOf = (t: Pick<Task, 'rems' | 'due' | 'time'>) => t.rems ?? (t.due == null ? [] : [t.time ? 'm30' : 'd0'])
 
 const REM_MIN: Record<string, number> = { m10: 10, m30: 30, h1: 60 }
 const REM_DAYS: Record<string, number> = { d0: 0, d1: 1, d3: 3 }

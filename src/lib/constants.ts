@@ -15,7 +15,7 @@ export const STATUS_DOT: Record<Status, string> = { todo: 'var(--fg3)', in_progr
 export const REC_SHORT: Record<Recurrence, string> = { daily: 'Harian', weekly: 'Mingguan', weekdays: 'Hari kerja', monthly: 'Bulanan' }
 
 export const PEOPLE: Record<string, Person> = {
-  me: { name: 'Anda', i: 'A', c: 'oklch(0.55 0.15 265)' },
+  me: { name: 'Kamu', i: 'K', c: 'oklch(0.55 0.15 265)' },
   budi: { name: 'Budi', i: 'B', c: 'oklch(0.6 0.13 55)' },
   siti: { name: 'Siti', i: 'S', c: 'oklch(0.58 0.14 340)' },
   rani: { name: 'Rani', i: 'R', c: 'oklch(0.58 0.12 170)' },

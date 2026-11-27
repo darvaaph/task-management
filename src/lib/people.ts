@@ -26,8 +26,8 @@ export function resolvePerson(
   },
 ): Person {
   if (id === opts.selfId || id === 'me') {
-    const name = opts.selfName.trim() || 'Anda'
-    return { name, i: (name[0] || 'A').toUpperCase(), c: PEOPLE.me.c }
+    const name = opts.selfName.trim() || 'Kamu'
+    return { name, i: (name[0] || 'K').toUpperCase(), c: PEOPLE.me.c }
   }
   if (opts.demo && PEOPLE[id]) return PEOPLE[id]
 

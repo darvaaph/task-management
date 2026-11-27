@@ -1,3 +1,4 @@
+import { fmt, today } from '../lib/dates'
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type ReactNode, type RefObject, type TextareaHTMLAttributes } from 'react'
 import { PRIO, PRIO_KEYS } from '../lib/constants'
 import type { Priority } from '../lib/types'
@@ -34,7 +35,7 @@ export function Avatar({ i, c, size = 22, ring }: { i: string; c: string; size?:
   return (
     <span
       className="grid flex-none place-items-center rounded-full font-semibold text-white"
-      style={{ width: size, height: size, background: c, fontSize: Math.round(size * 0.45), border: ring ? `2px solid ${ring}` : undefined }}
+      style={{ width: size, height: size, background: c, fontSize: Math.max(10, Math.round(size * 0.45)), border: ring ? `2px solid ${ring}` : undefined }}
     >
       {i}
     </span>
@@ -59,7 +60,7 @@ export function Segmented<T extends string>({ value, options, onChange, full, si
             type="button"
             aria-pressed={on}
             onClick={() => onChange(o.value)}
-            className={`rounded-sm border-0 font-medium transition-colors ${full ? 'flex-1' : ''} ${size === 'lg' ? 'h-17 text-[14px]' : 'px-7 py-3.5 text-[13px]'} ${on ? 'bg-surface text-fg shadow-seg' : 'bg-transparent text-fg2'}`}
+            className={`rounded-sm border-0 font-medium transition-colors ${full ? 'flex-1' : ''} ${size === 'lg' ? 'h-18 text-[14px]' : 'h-14 px-7 text-[13px] max-md:h-18'} ${on ? 'bg-surface text-fg shadow-seg' : 'bg-transparent text-fg2'}`}
           >
             {o.label}
           </button>
@@ -244,6 +245,36 @@ export function useEscape(fn: () => void) {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [fn])
+}
+
+// The raw date field shows the browser's own format ("25-Nov-2026"); a chip that opens the picker keeps the app's wording.
+export const openPicker = (el: HTMLInputElement | null) => {
+  if (!el) return
+  try { el.showPicker() } catch { el.focus(); el.click() }
+}
+
+/** "Pilih tanggal…" chip that opens the device date picker. */
+export function DateChip({ value, custom, onChange, size, min }: { value: string | null; custom: boolean; onChange: (v: string | null) => void; size: 'sm' | 'md' | 'lg'; min?: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <span className="relative flex">
+      <Chip size={size} active={custom} onClick={() => openPicker(ref.current)}>{custom ? fmt(value) : 'Pilih tanggal…'}</Chip>
+      <input ref={ref} type="date" min={min} value={value ?? ''} onChange={e => onChange(e.target.value || null)} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0" />
+    </span>
+  )
+}
+
+/** A labelled date button that opens the device picker. Adds the year only when it isn't this year. */
+export function DateField({ value, onChange, label, className }: { value: string | null; onChange: (v: string) => void; label: string; className: string }) {
+  const ref = useRef<HTMLInputElement>(null)
+  const year = value && value.slice(0, 4) !== today().slice(0, 4) ? ` ${value.slice(0, 4)}` : ''
+  const shown = value ? fmt(value) + year : 'Pilih tanggal…'
+  return (
+    <span className="relative flex">
+      <button type="button" aria-label={`${label}: ${value ? shown : 'belum dipilih'}`} onClick={() => openPicker(ref.current)} className={`whitespace-nowrap rounded-[8px] border border-line2 bg-bg px-5 text-[13px] font-medium ${value ? 'text-fg' : 'text-fg3'} ${className}`}>{shown}</button>
+      <input ref={ref} type="date" value={value ?? ''} onChange={e => e.target.value && onChange(e.target.value)} tabIndex={-1} aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0" />
+    </span>
+  )
 }
 
 /** Textarea that grows with its text; `rows` is the minimum height. */

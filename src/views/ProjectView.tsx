@@ -66,7 +66,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
       <div className="flex flex-col gap-8 pt-2">
         <div className="flex flex-col gap-5 px-10">
           <div className="flex items-center gap-4">
-            <button type="button" onClick={() => s.go('projects')} className="border-0 bg-transparent py-3 text-[15px] font-medium text-accent">‹ Proyek</button>
+            <button type="button" onClick={() => s.go('projects')} className="h-18 border-0 bg-transparent text-[15px] font-medium text-accent">‹ Proyek</button>
             <span className="flex-1" />
             <button type="button" onClick={() => s.setUI({ overlay: 'share' })} className="h-18 rounded-pill border border-line2 bg-transparent px-7 text-[13px] font-medium text-fg">Bagikan</button>
             <button type="button" onClick={() => s.setUI({ overlay: 'project' })} className="h-18 rounded-pill border border-line2 bg-transparent px-7 text-[13px] font-medium text-fg">Kelola</button>
@@ -183,7 +183,7 @@ function BoardCard({ t, mobile, onDragStart, onDragEnd }: { t: Task; mobile?: bo
         <button
           type="button"
           onClick={e => { e.stopPropagation(); s.setStatus(t.id, next) }}
-          className={`whitespace-nowrap rounded-[6px] border border-line2 bg-transparent font-medium text-fg2 ${mobile ? 'h-16 rounded-[8px] px-5 text-[12px]' : 'px-3.5 py-2 text-[11px]'}`}
+          className={`whitespace-nowrap rounded-[6px] border border-line2 bg-transparent font-medium text-fg2 ${mobile ? 'h-18 rounded-[8px] px-5 text-[12px]' : 'px-3.5 py-2 text-[11px]'}`}
         >
           {label}
         </button>

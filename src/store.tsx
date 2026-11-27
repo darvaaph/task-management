@@ -51,7 +51,7 @@ import {
 } from './lib/localStore'
 import { isProForProject, resolvePerson } from './lib/people'
 import { WriteQueue } from './lib/writeQueue'
-import type { Activity, Area, Data, ISODate, Person, Priority, Project, ProjectMember, Task } from './lib/types'
+import type { Activity, Area, Data, ISODate, Person, Priority, Project, ProjectMember, Task, Recurrence } from './lib/types'
 
 export type { Accent, Account, LocalMigration, ProCtx, Theme, UI, View }
 
@@ -446,7 +446,7 @@ function useStoreValue() {
             setAuthError('')
 
             const p = snap.data()
-            const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : (fbUser.displayName?.trim() || 'Anda')
+            const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim() : (fbUser.displayName?.trim() || 'Kamu')
             // plan is read-only from Firestore and is the source of truth for s.isPro on signed-in accounts.
             const plan: 'free' | 'pro' = p.plan === 'pro' ? 'pro' : 'free'
 
@@ -593,7 +593,7 @@ function useStoreValue() {
         && !cloudArchivedRef.current.some(ap => ap.id === curUI.projectId)
       ) {
         setUIState(u => ({ ...u, view: 'projects', projectId: null, taskId: null, overlay: null }))
-        say('Anda tidak lagi tergabung di proyek ini.')
+        say('Kamu tidak lagi tergabung di proyek ini.')
       }
 
       knownActivePidsRef.current = nextPids
@@ -783,7 +783,7 @@ function useStoreValue() {
         clearInviteUrl()
         setInviteState({ status: 'idle' })
         setUIState({ ...UI0(), view: 'project', projectId })
-        say('Anda sudah tergabung di proyek ini')
+        say('Kamu sudah tergabung di proyek ini')
         return
       }
       const memberCount = typeof d.memberCount === 'number' ? d.memberCount : 1
@@ -823,7 +823,7 @@ function useStoreValue() {
     clearInviteUrl()
     setInviteState({ status: 'idle' })
     setUIState({ ...UI0(), view: 'project', projectId: pid })
-    say('Anda sudah tergabung di proyek ini')
+    say('Kamu sudah tergabung di proyek ini')
   }, [cloudActive, cloudActiveProjects, cloudArchivedProjects, inviteState.projectId, inviteState.status, inviteToken, say])
 
   const clearDraftTask = useCallback((id: string) => {
@@ -925,7 +925,7 @@ function useStoreValue() {
         batch.update(fb.doc(fb.db, 'invites', existing.inviteToken), {
           projectName: projPatch.name,
           projectId: existing.id,
-          ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+          ownerName: accountRef.current.name.trim().slice(0, 100) || 'Kamu',
           due: existing.due,
           active: true,
           updatedAt: fb.serverTimestamp(),
@@ -1365,26 +1365,33 @@ function useStoreValue() {
     updateTask(t.id, { project: d.project, area: d.area, section: d.section, assignee })
   }, [cancelPendingWrite, runCloud, updateTask])
 
-  const addTask = useCallback((input: { title: string; dest: Dest; due: ISODate | null; prio: Priority; pic: string | null }) => {
+  const addTask = useCallback((input: { title: string; dest: Dest; due: ISODate | null; prio: Priority; pic: string | null; time?: string | null; notes?: string; rec?: Recurrence | null; rems?: string[] }) => {
     const d = parseDest(input.dest)
     const p = d.project ? dataRef.current.projects.find(x => x.id === d.project) : null
     const fallbackPic = cloudUidRef.current ?? 'me'
     const t: Task = {
       id: 'n' + Date.now(), title: input.title, project: d.project, area: d.area, section: d.section,
       assignee: p ? (input.pic && p.members.includes(input.pic) ? input.pic : fallbackPic) : null,
-      status: 'todo', prio: input.prio, start: null, due: input.due, time: null, notes: '', rec: null, dur: null,
+      status: 'todo', prio: input.prio, start: null, due: input.due, time: input.time ?? null, notes: input.notes ?? '', rec: input.rec ?? null, dur: null,
+      ...(input.rems !== undefined ? { rems: input.rems } : {}),
     }
     const curUid = cloudUidRef.current
     const fb = fbRef.current
     if (curUid && fb) {
       if (d.project && p) {
         const ownerPro = isProForProject(p, isProRef.current, false)
-        runCloud(
-          fb.setDoc(
-            fb.doc(fb.db, 'projects', d.project, 'tasks', t.id),
-            projectTaskToCloudDoc(t, d.project, curUid, ownerPro, p.members, fb.serverTimestamp),
-          ),
+        // The reminder rule requires the task to exist, so both are written in one batch.
+        const batch = fb.writeBatch(fb.db)
+        batch.set(
+          fb.doc(fb.db, 'projects', d.project, 'tasks', t.id),
+          projectTaskToCloudDoc(t, d.project, curUid, ownerPro, p.members, fb.serverTimestamp),
         )
+        if (t.rems !== undefined) {
+          const keys = t.rems.filter(k => VALID_REMS.includes(k)).slice(0, ownerPro ? 6 : 1)
+          setCloudReminders(prev => ({ ...prev, [t.id]: keys }))
+          batch.set(fb.doc(fb.db, 'users', curUid, 'reminders', t.id), { keys, projectId: d.project, updatedAt: fb.serverTimestamp() })
+        }
+        runCloud(batch.commit())
         return t
       }
       runCloud(fb.setDoc(fb.doc(fb.db, 'users', curUid, 'tasks', t.id), taskToCloudDoc(t, curUid, isProRef.current, fb.serverTimestamp)))
@@ -1487,7 +1494,7 @@ function useStoreValue() {
         if (p.inviteToken && (immediate.name || immediate.due)) {
           batch.update(fb.doc(fb.db, 'invites', p.inviteToken), {
             projectName: (immediate.name as string | undefined) ?? p.name,
-            ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+            ownerName: accountRef.current.name.trim().slice(0, 100) || 'Kamu',
             due: (immediate.due as string | undefined) ?? p.due,
             active: true,
             updatedAt: fb.serverTimestamp(),
@@ -1732,7 +1739,7 @@ function useStoreValue() {
         batch.update(fb.doc(fb.db, 'invites', p.inviteToken), {
           active: false,
           projectName: p.name,
-          ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+          ownerName: accountRef.current.name.trim().slice(0, 100) || 'Kamu',
           due: p.due,
           updatedAt: fb.serverTimestamp(),
         })
@@ -1743,7 +1750,7 @@ function useStoreValue() {
         active: true,
         createdAt: fb.serverTimestamp(),
         projectName: p.name,
-        ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+        ownerName: accountRef.current.name.trim().slice(0, 100) || 'Kamu',
         memberCount: p.members.length,
         due: p.due,
         full: p.members.length >= limit,
@@ -1783,7 +1790,7 @@ function useStoreValue() {
       active: true,
       createdAt: fb.serverTimestamp(),
       projectName: p.name,
-      ownerName: accountRef.current.name.trim().slice(0, 100) || 'Anda',
+      ownerName: accountRef.current.name.trim().slice(0, 100) || 'Kamu',
       memberCount: p.members.length,
       due: p.due,
       full: p.members.length >= limit,
@@ -1847,7 +1854,7 @@ function useStoreValue() {
       setInviteState({ status: 'idle' })
       setUIState({ ...UI0(), view: 'project', projectId: pid })
       if (res.data.alreadyMember) {
-        say('Anda sudah tergabung di proyek ini')
+        say('Kamu sudah tergabung di proyek ini')
       } else {
         setJoinedProjectId(pid)
       }
@@ -2141,7 +2148,7 @@ function useStoreValue() {
     setAuthError('')
     setAuthBusy(false)
     setAuthStatus('')
-    setAccountState(a => ({ ...a, uid: undefined, loggedIn: true, demo: true, name: 'Anda', onboarding: false }))
+    setAccountState(a => ({ ...a, uid: undefined, loggedIn: true, demo: true, name: 'Kamu', onboarding: false }))
     setUIState(UI0())
   }, [account.demo])
 
@@ -2519,7 +2526,7 @@ function useStoreValue() {
           movedProjects ? `${movedProjects} proyek` : '',
           movedProjectTasks ? `${movedProjectTasks} tugas proyek` : '',
         ].filter(Boolean)
-        say(parts.length ? `${parts.join(', ')} dipindahkan ke akun Anda` : 'Data lokal sudah ada di akun Anda')
+        say(parts.length ? `${parts.join(', ')} dipindahkan ke akun kamu` : 'Data lokal sudah ada di akun kamu')
       } else if (quotaHit) {
         setPendingMigration({ areas: [], tasks: [], projects: remainingProjects, projectTasks: remainingProjectTasks })
         const movedMsg = movedProjects ? `${movedProjects} proyek dipindahkan; ` : ''
