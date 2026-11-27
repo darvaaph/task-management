@@ -39,7 +39,7 @@ function CalNav({ label, onPrev, onToday, onNext, unit, big }: { label?: string;
     <div className="flex items-center gap-3">
       {label}
       <button type="button" aria-label={`${unit} sebelumnya`} onClick={onPrev} className={`${navBtn} ${h} text-[16px]`}>‹</button>
-      <button type="button" onClick={onToday} className={`${navBtn} ${h} px-6 text-[13px] font-medium`}>Hari ini</button>
+      <button type="button" onClick={onToday} className={`${navBtn} ${h} whitespace-nowrap px-6 text-[13px] font-medium`}>Hari ini</button>
       <button type="button" aria-label={`${unit} berikutnya`} onClick={onNext} className={`${navBtn} ${h} text-[16px]`}>›</button>
     </div>
   )
@@ -140,7 +140,8 @@ export function JadwalView({ mobile }: { mobile: boolean }) {
   const kicker = cal === 'month' ? 'Jadwal · Bulanan' : cal === 'week' ? 'Jadwal · Mingguan' : 'Jadwal · Semua proyek'
   return (
     <div className="flex h-full min-h-0 flex-col gap-7">
-      <div className="flex items-end gap-8">
+      {/* Wraps the mode switch below the title on tablet widths instead of pushing it off-screen. */}
+      <div className="flex flex-wrap items-end gap-x-8 gap-y-5">
         <div className="flex flex-1 flex-col gap-2">
           <div className="flex items-center gap-4">
             <span className="font-mono text-[12px] font-medium text-fg3">{kicker}</span>
@@ -152,10 +153,10 @@ export function JadwalView({ mobile }: { mobile: boolean }) {
             {cal === 'week' && <CalNav unit="Minggu" onPrev={() => goWeek(-1)} onToday={() => pick(today())} onNext={() => goWeek(1)} />}
           </div>
         </div>
-        <div className="flex flex-col items-end gap-5">
+        <div className="ml-auto flex flex-col items-end gap-5">
           <ModeSwitch />
           {cal === 'month' && (
-            <div className="flex gap-7 text-[12px] text-fg2">
+            <div className="flex flex-wrap gap-x-7 gap-y-2 text-[12px] text-fg2">
               {(['high', 'med', 'low'] as const).map(k => (
                 <span key={k} className="flex items-center gap-3"><span aria-hidden="true" className="size-3.5 rounded-full" style={{ background: PRIO[k].c }} />{PRIO[k].label}</span>
               ))}
@@ -302,7 +303,7 @@ function WeekGrid() {
         {week.map((d, i) => {
           const isT = d === t0, isS = d === s.ui.calDay
           return (
-            <button key={d} type="button" onClick={() => s.setUI({ calDay: d })} className="flex items-center gap-4 border-0 border-l border-line bg-transparent px-5 pt-5 pb-4.5 text-fg">
+            <button key={d} type="button" onClick={() => s.setUI({ calDay: d })} className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border-0 border-l border-line bg-transparent px-5 pt-5 pb-4.5 text-fg">
               <span className={`font-mono text-[10.5px] font-semibold tracking-[.06em] ${isT ? 'text-accent' : 'text-fg3'}`}>{DAY_SHORT[i]}</span>
               <span className={`grid h-13 min-w-13 place-items-center rounded-pill px-3 text-[13px] font-semibold ${isT ? 'bg-accent text-on-accent' : isS ? 'bg-surface2' : ''}`}>{dayNum(d)}</span>
             </button>
@@ -310,7 +311,7 @@ function WeekGrid() {
         })}
       </div>
       <div className={`${cols} border-b border-line2`}>
-        <span className="px-3 py-4 text-right font-mono text-[9.5px] leading-[1.3] font-semibold tracking-[.04em] text-fg3">SEPANJANG HARI</span>
+        <span className="px-3 py-4 text-right font-mono text-[10px] leading-[1.3] font-semibold tracking-[.04em] text-fg3">SEPANJANG HARI</span>
         {week.map((d, i) => (
           <div key={d} {...zone('all:' + d, id => s.moveDue(id, d, null))} className={`flex min-h-22 min-w-0 flex-col gap-1.5 border-l border-line p-3 transition-colors ${over === 'all:' + d ? 'bg-accent-soft' : i >= 5 ? 'bg-hover' : ''}`}>
             {chipsFor(d, s.tasks, s.projects, virt, false).map(c => <CalChip key={c.key} c={c} />)}

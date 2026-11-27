@@ -1,7 +1,7 @@
 import { fmt } from '../lib/dates'
 import { useStore } from '../store'
 import { IconGoogle, LogoMark } from './icons'
-import { Chip, Modal, Sheet, btnPrimary, btnSecondary } from './ui'
+import { Chip, btnPrimary, btnSecondary } from './ui'
 
 /**
  * Invite landing view for `/invite/{token}` (DESIGN §6.25).
@@ -111,43 +111,38 @@ export function InviteView({ mobile }: { mobile: boolean }) {
  * Post-join personal area picker (DESIGN §6.25, PRD §5.4).
  * Lets the new member place the shared project in one of their own areas (or skip).
  */
-export function PickMemberAreaDialog({ mobile }: { mobile: boolean }) {
+/** Shown inline at the top of a just-joined project, so the member still sees the project instead of a blocking dialog. */
+export function PickMemberAreaCard({ mobile, projectName }: { mobile: boolean; projectName: string }) {
   const s = useStore()
-  const pid = s.joinedProjectId
-  if (!pid) return null
-  const proj = s.projects.find(p => p.id === pid)
-  const name = proj?.name ?? 'proyek ini'
-
-  const body = (
-    <>
+  return (
+    <section aria-label="Pilih area proyek" className={`flex flex-col rounded-lg border border-line bg-surface ${mobile ? 'gap-6 p-8' : 'max-w-[780px] gap-6 p-9'}`}>
       <div className="flex flex-col gap-2">
-        <h2 className="m-0 font-display text-[20px] leading-tight font-semibold">Masukkan ke area mana?</h2>
+        <h2 className="m-0 font-display text-[17px] leading-tight font-semibold">Masukkan ke area mana?</h2>
         <p className="m-0 text-[13.5px] leading-normal text-fg2">
-          Pilih area di akun Anda untuk proyek “{name}”. Pilihan ini hanya terlihat oleh Anda.
+          Pilih area di akun Anda untuk proyek “{projectName}”. Pilihan ini hanya terlihat oleh Anda.
         </p>
       </div>
-      {s.areas.length > 0 ? (
-        <div className="flex flex-wrap gap-3">
-          {s.areas.map(a => (
-            <Chip key={a.id} size={mobile ? 'lg' : 'md'} dot={a.color} active={false} onClick={() => s.pickJoinedArea(a.id)}>
-              {a.name}
-            </Chip>
-          ))}
-        </div>
-      ) : (
-        <span className="text-[13px] text-fg3">Belum ada area di akun Anda.</span>
-      )}
-      <button
-        type="button"
-        onClick={() => s.pickJoinedArea(null)}
-        className={mobile ? 'h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg' : `${btnSecondary} h-19`}
-      >
-        Nanti saja
-      </button>
-    </>
+      <div className={`flex gap-3 ${mobile ? 'flex-col' : 'flex-wrap items-center'}`}>
+        {s.areas.length > 0 ? (
+          <div className="flex flex-wrap gap-3">
+            {s.areas.map(a => (
+              <Chip key={a.id} size={mobile ? 'lg' : 'md'} dot={a.color} active={false} onClick={() => s.pickJoinedArea(a.id)}>
+                {a.name}
+              </Chip>
+            ))}
+          </div>
+        ) : (
+          <span className="text-[13px] text-fg3">Belum ada area di akun Anda.</span>
+        )}
+        {!mobile && <span className="flex-1" />}
+        <button
+          type="button"
+          onClick={() => s.pickJoinedArea(null)}
+          className={mobile ? 'h-22 rounded-[12px] border border-line2 bg-transparent text-[14px] font-medium text-fg' : btnSecondary}
+        >
+          Nanti saja
+        </button>
+      </div>
+    </section>
   )
-
-  return mobile
-    ? <Sheet onClose={() => s.pickJoinedArea(null)} label="Pilih area proyek">{body}</Sheet>
-    : <Modal onClose={() => s.pickJoinedArea(null)} label="Pilih area proyek" width={440}>{body}</Modal>
 }

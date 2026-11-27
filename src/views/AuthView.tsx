@@ -16,7 +16,7 @@ function AuthLogo({ size }: { size: number }) {
 const HERO_AREAS = AREA_PRESETS.slice(0, 3).map((a, i) => ({ ...a, color: AREA_COLORS[i] }))
 
 /**
- * Sign-in screen (Google + Mode Demo) and first-login starting area picker (DESIGN §6.20, §6.29).
+ * Sign-in screen (Google only; Mode Demo opens from the /demo link) and first-login starting area picker (DESIGN §6.20, §6.29).
  */
 export function AuthView({ mobile }: { mobile: boolean }) {
   const s = useStore()
@@ -65,16 +65,6 @@ export function AuthView({ mobile }: { mobile: boolean }) {
           <p className="m-0 -mt-3 text-center text-[12.5px] leading-normal text-fg3">
             Gunakan akun Google pribadi. Akun sekolah atau kampus kadang diblokir oleh admin.
           </p>
-          <div className="my-2 flex items-center gap-6 text-[12px] text-fg3"><span className="h-px flex-1 bg-line2" />atau<span className="h-px flex-1 bg-line2" /></div>
-          <button
-            type="button"
-            disabled={s.authBusy}
-            onClick={s.startDemo}
-            className={`${mobile ? 'h-27 rounded-[12px]' : 'h-25 rounded-md'} border-0 bg-accent text-[15px] font-semibold text-on-accent disabled:opacity-60`}
-          >
-            Coba Mode Demo
-          </button>
-          <div className="text-center text-[12.5px] leading-normal text-fg3">Tanpa daftar. Data contoh tersimpan di perangkat ini.</div>
         </>
       ) : (
         <>

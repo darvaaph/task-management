@@ -20,6 +20,9 @@ export const IconFolder = ({ size = 16, sw = 2 }: P) => (
   <svg {...base(size, sw)}><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z" /></svg>
 )
 
+export const IconSidebar = ({ size = 16, sw = 2 }: P) => (
+  <svg {...base(size, sw)}><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M9 4v16" /></svg>
+)
 export const IconGoogle = ({ size = 18 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="flex-none">
     <path d="M21.35 11.1h-9.18v2.98h5.27c-.23 1.38-1.5 4.05-5.27 4.05-3.17 0-5.76-2.63-5.76-5.88s2.59-5.88 5.76-5.88c1.81 0 3.02.77 3.71 1.43l2.53-2.44C16.79 3.85 14.69 3 12.17 3 7.11 3 3 7.11 3 12.25s4.11 9.25 9.17 9.25c5.29 0 8.8-3.72 8.8-8.95 0-.6-.06-1.06-.15-1.45z" />

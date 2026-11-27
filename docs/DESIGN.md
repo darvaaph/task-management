@@ -62,7 +62,7 @@ Jangan membuat abu-abu yang lebih muda dari `--fg3` untuk teks. Untuk elemen yan
 
 `--ah` adalah hue aksen. Bawaan: Indigo `265`. Pilihan lain (fitur Pro "warna aksen"): Teal `195`, Tangerine `45`, Forest `150`. Teal memakai lightness 0.47 (bukan 0.5) karena pada 0.5 kontrasnya hanya 4,21:1. Setiap hue baru wajib dicek ulang kontrasnya: teks aksen di atas `--accent-soft` minimal 4,5:1.
 
-Aksen dipakai untuk: tab aktif, tombol utama yang berwarna (FAB, "Coba Mode Demo"), garis "hari ini" di Timeline, dan progres. Jangan memakai aksen untuk teks biasa atau dekorasi.
+Aksen dipakai untuk: tab aktif, tombol utama yang berwarna (FAB), garis "hari ini" di Timeline, dan progres. Jangan memakai aksen untuk teks biasa atau dekorasi.
 
 ### 2.3 Prioritas
 
@@ -118,7 +118,7 @@ Batas bawah: tidak ada teks di bawah **10 px**, dan teks 10–11 px hanya dalam 
 - Padding halaman desktop: `32px 44px 48px`. Lebar isi maksimal 780 px (Hari Ini, Inbox), 900 px (Proyek).
 - Padding halaman HP: 16–20 px kiri-kanan.
 - Jarak antarbagian: 20–28 px. Jarak di dalam bagian: 2 px antarbaris tugas.
-- Ruang bawah HP: `padding-bottom:110px` agar baris terakhir tidak tertutup FAB dan navigasi bawah.
+- Ruang bawah HP: `padding-bottom: calc(96px + max(12px, safe-area))` agar baris terakhir tidak tertutup FAB dan navigasi bawah.
 
 **Sudut (radius)**
 
@@ -137,6 +137,7 @@ Batas bawah: tidak ada teks di bawah **10 px**, dan teks 10–11 px hanya dalam 
 - `--shadow`: hanya untuk bingkai layar di prototipe.
 - Segmented control aktif: `0 1px 2px rgba(0,0,0,.1)`.
 - FAB: `0 10px 24px -8px` dengan warna aksen.
+- Navigasi bawah melayang (HP): `0 8px 24px -12px rgba(0,0,0,.25)`, sama dengan popover.
 - Selain itu, kedalaman dibuat dengan **border `--line`**, bukan bayangan.
 
 ---
@@ -181,7 +182,7 @@ Batas bawah: tidak ada teks di bawah **10 px**, dan teks 10–11 px hanya dalam 
 | Jenis | Gaya | Contoh |
 |---|---|---|
 | Utama | Latar `--fg`, teks `--bg`, 600 | Tambah, Simpan, Masuk |
-| Utama berwarna | Latar `--accent`, teks `--on-accent` | FAB +, Coba Mode Demo |
+| Utama berwarna | Latar `--accent`, teks `--on-accent` | FAB + |
 | Sekunder | Transparan, border `--line2`, teks `--fg` | Bagikan, Hari ini, Ubah jadwal |
 | Bahaya | Transparan, border `--line2`, teks `--high` | Hapus, Keluar |
 | Aksi terlambat | Latar `--high`, teks putih | Geser semua ke Hari Ini |
@@ -215,7 +216,8 @@ Hover desktop: border menjadi `--line2`.
 
 ### 6.8 Navigasi bawah (HP)
 
-- Tinggi 64 px ditambah `max(24 px, env(safe-area-inset-bottom))`: 88 px tanpa home indicator, 98 px di iPhone dengan home indicator. FAB, toast, dan padding bawah halaman ikut naik sebesar nilai yang sama. Empat menu: **Hari Ini · Inbox · Jadwal · Proyek**.
+- **Pil melayang:** latar `--surface`, border `--line`, radius pill, padding 4 px, tombol setinggi 54 px (total 64 px), lebar layar dikurangi 24 px dengan maksimal 400 px di tengah. Jarak bawah `max(12 px, env(safe-area-inset-bottom))`. FAB berada 14 px di atas pil, rata dengan tepi kanan kolom isi; toast di atas FAB. Padding bawah halaman 96 px ditambah jarak bawah yang sama.
+- Di HP, isi halaman dibatasi 600 px di tengah, jadi layar 600–767 px (iPad mini, HP lipat) tetap memakai kolom selebar HP. Empat menu: **Hari Ini · Inbox · Jadwal · Proyek**.
 - Aktif: ikon di dalam pill 56 × 30 berlatar `--accent-soft`, ikon dan label `--accent`, label 600.
 - Tidak aktif: tanpa pill, warna `--fg2`, label 500.
 - Fitur terkunci (Pro) **tidak boleh** jadi menu utama.
@@ -315,7 +317,7 @@ Satu layar masuk tanpa isian email, kata sandi, atau Lupa kata sandi (login hany
 - Judul **"Masuk ke TaskFlow"** dengan keterangan *"Lanjutkan ke tugas dan proyekmu."*
 - Tombol utama **"Lanjutkan dengan Google"** (latar `--fg`, teks `--bg`, ikon monokrom `currentColor`; saat berjalan menampilkan *"Menghubungkan…"* atau *"Menyiapkan akun…"*). Di web memakai popup dengan cadangan redirect bila popup diblokir.
 - Catatan kecil di bawah tombol Google (`--fg3`): *"Gunakan akun Google pribadi. Akun sekolah atau kampus kadang diblokir oleh admin."*
-- Pemisah `atau`, lalu tombol aksen **"Coba Mode Demo"** dengan keterangan *"Tanpa daftar. Data contoh tersimpan di perangkat ini."* Mode Demo tetap lokal dan tidak menyentuh Firebase.
+- Tidak ada tombol Mode Demo di layar ini. Mode Demo hanya dibuka lewat tautan khusus **`/demo`**: aplikasi langsung masuk ke data contoh tanpa menampilkan layar Masuk, lalu alamatnya kembali ke `/`. Bila dibuka saat sedang masuk dengan akun Google, data lokal yang belum dipindah tetap disimpan dan data cloud tidak disentuh. Mode Demo tetap lokal dan tidak menyentuh Firebase.
 - Error tampil di atas tombol utama (`role="alert"`, latar `--high-soft`, teks `--high`) dengan pesan pendek yang tidak menyalahkan (*"Masuk dibatalkan."*, *"Tidak bisa terhubung ke Google. Periksa koneksi internet lalu coba lagi."*, *"Gagal masuk dengan Google. Coba lagi."*, *"Profil akun belum siap. Coba lagi sebentar."*).
 - Setelah login Google pertama (akun belum memiliki area di cloud), layar berpindah ke **"Pilih area awal"** (6.29), lalu menulis area pilihan dan tugas panduan (`guideTasks()`) ke akun.
 - Jika browser memiliki data lokal non-demo sebelum login atau proyek lokal per-akun (`byUid`) yang belum dipindah, tampil dialog (`Modal` 440 px di desktop, `Sheet` di HP): **"Pindahkan data di perangkat ini ke akun Anda?"** dengan ringkasan jumlah area/tugas lepas/proyek serta tombol **Pindahkan** (saat berjalan: *"Memindahkan…"* + **Batalkan**) dan **Lewati**. Area dan tugas lepas ditulis per batch maks. 500 ops; proyek lokal dipindah satu per satu lewat server mengikuti kuota akun (PIC `"Anda"` dipetakan ke akun pengguna, PIC contoh dikosongkan; proyek yang melebihi kuota tetap tersimpan di perangkat dengan banner pengingat di tab Proyek). Salinan lokal tidak dihapus sebelum penulisan dikonfirmasi server, dan seluruh proses bersifat idempoten terhadap klik ganda maupun pembatalan di tengah jalan.
@@ -356,7 +358,7 @@ Tombol "Bagikan" di header detail proyek (desktop dan HP).
 - Kuota penuh: pesan + "Lihat Pro" (Gratis).
 - **Pratinjau undangan** (apa yang dilihat teman, termasuk "Proyek ini sudah penuh") tertutup secara bawaan: baris "Lihat tampilan undangan ›" (`aria-expanded`) membukanya di tempat.
 - **Halaman undangan** tidak menampilkan area pemilik (area itu pribadi): isinya logo, "<nama> mengundang Anda ke", nama proyek, "x anggota · tenggat <tanggal>", lalu **Gabung proyek**. Tautan memakai asal domain aktif (`${location.origin}/invite/{token}`). Status yang ditangani: tautan tidak berlaku/sudah diganti, proyek sudah penuh, sudah menjadi anggota (langsung membuka proyek), offline ("Butuh koneksi internet untuk bergabung."), dan belum masuk akun (simpan token sementara di sesi lalu lanjutkan otomatis setelah masuk).
-- **Setelah bergabung**: sheet/modal pendek "Masukkan ke area mana?" berisi chip area milik teman + "Nanti saja" (= Tanpa area). Tidak ada area baru yang dibuat otomatis. Di Kelola proyek, anggota bisa mengganti area ini untuk dirinya sendiri; pemilik mengganti area proyek seperti biasa.
+- **Setelah bergabung**: kartu "Masukkan ke area mana?" di atas halaman proyek (bukan dialog, supaya proyek tetap terlihat) berisi chip area milik teman + "Nanti saja" (= Tanpa area). Tidak ada area baru yang dibuat otomatis. Di Kelola proyek, anggota bisa mengganti area ini untuk dirinya sendiri; pemilik mengganti area proyek seperti biasa.
 - **Mode Demo:** tombol "Simulasi: teman membuka tautan" hanya muncul di Mode Demo. Akun biasa langsung menampilkan tautan undangan sungguhan tanpa tombol simulasi.
 - Riwayat aktivitas (Pro): tambah tugas, ganti status, selesai, anggota bergabung/dikeluarkan.
 
@@ -381,7 +383,8 @@ Akun baru dari Daftar mulai **kosong** (area yang dipilih di 6.29 tetap ada). Ha
 
 ### 6.28 Perangkat dan platform
 
-- **Ukuran layar:** HP < 768 px (navigasi bawah). Tablet 768–1099 px: sidebar tetap, **panel detail melayang** di kanan di atas isi (latar gelap tipis, ketuk di luar untuk menutup). Laptop ≥ 1100 px: panel detail menjadi kolom 360 px seperti biasa.
+- **Ukuran layar:** HP < 768 px (navigasi bawah). Tablet 768–1099 px: sidebar **ciut jadi ikon** (64 px) secara bawaan, **panel detail melayang** di kanan di atas isi (latar gelap tipis, ketuk di luar untuk menutup). Laptop ≥ 1100 px: panel detail menjadi kolom 360 px seperti biasa.
+- **Sidebar ciut:** tombol ikon panel (`aria-label` "Ciutkan sidebar" / "Buka sidebar", `aria-expanded`) di samping logo. Versi ciut 64 px hanya berisi logo, tombol buka, Cari cepat, dan empat menu utama (ikon dengan `aria-label` dan `title`, menu aktif berlatar `--surface2` dengan ikon aksen), lalu avatar di bawah. Area, proyek, kartu Pro, tema, aksen, suara, dan Keluar ada di sidebar penuh. Pilihan pengguna disimpan di perangkat; tanpa pilihan, sidebar ciut di bawah 1100 px dan penuh di laptop.
 - **Jenis input** ditentukan dari `pointer: coarse`, bukan dari lebar layar. Perangkat sentuh: isian teks minimal 16 px (mencegah zoom otomatis di iOS Safari), dan geser-batang Timeline memakai mode "Ubah jadwal". Jangan memakai `maximum-scale=1`, karena mematikan zoom aksesibilitas.
 - **Safe-area:** navigasi bawah, FAB, dan toast memakai `env(safe-area-inset-bottom)`. Tinggi layar memakai `dvh`, bukan `vh`.
 - **PWA:** bisa dipasang ke layar utama (`manifest.webmanifest`, tampilan `standalone`, warna latar/tema `--bg` terang). Service worker (`public/sw.js`, hanya di build produksi) menyimpan aplikasi sejak kunjungan pertama, jadi TaskFlow tetap terbuka tanpa internet; halaman diambil dari jaringan dulu supaya versi baru langsung tampil.
@@ -450,6 +453,9 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.19 (27 Nov 2026):** Navigasi bawah HP jadi pil melayang (maks. 400 px), isi HP dibatasi 600 px, FAB rata tepi kolom (§6.8).
+- **0.18 (27 Nov 2026):** Sidebar desktop bisa diciutkan jadi ikon 64 px, ciut otomatis di tablet (§6.28). Header Jadwal turun baris di bawah 1100 px.
+- **0.17 (27 Nov 2026):** Tombol "Coba Mode Demo" dihapus dari layar Masuk; Mode Demo dibuka lewat tautan `/demo` (§6.20).
 - **0.16 (27 Nov 2026):** Pemindahan proyek lokal (`byUid`) & tugas proyek saat login/proyek dengan kepatuhan kuota, pembatalan di tengah, dan idempotensi (§6.20).
 - **0.15 (26 Nov 2026):** Halaman undangan `/invite/{token}` memakai `${location.origin}`, penanganan 4 status undangan + belum login, dan dialog "Masukkan ke area mana?" setelah bergabung (§6.25).
 - **0.14 (25 Nov 2026):** Dialog tawaran pindahkan data lokal non-demo (area & tugas lepas) setelah login Google pertama (§6.20).

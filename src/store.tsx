@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DocumentData, UpdateData, WriteBatch } from 'firebase/firestore'
 import { AREA_COLORS, AREA_PRESETS, DEFAULT_AREA_IDS, FREE_MEMBER_QUOTA, FREE_PROJECT_QUOTA, MEMBER_POOL, PEOPLE, PRO_MEMBER_QUOTA, STATUS } from './lib/constants'
 import { addDays, diffDays, fmtDay, today } from './lib/dates'
@@ -36,6 +36,7 @@ import {
   normalizeByUid,
   normalizeData,
   parseInvitePath,
+  takeDemoPath,
   saveLocalStore,
   setPendingInvite,
   setRedirectFlag,
@@ -2143,6 +2144,11 @@ function useStoreValue() {
     setAccountState(a => ({ ...a, uid: undefined, loggedIn: true, demo: true, name: 'Anda', onboarding: false }))
     setUIState(UI0())
   }, [account.demo])
+
+  // Layout effect so the sign-in screen never flashes before the demo opens.
+  useLayoutEffect(() => {
+    if (takeDemoPath()) startDemo()
+  }, [])
 
   const signInWithGoogle = useCallback(async () => {
     setAuthError('')

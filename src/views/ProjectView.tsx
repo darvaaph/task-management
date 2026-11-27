@@ -9,6 +9,7 @@ import type { Status, Task } from '../lib/types'
 import { useStore } from '../store'
 import { Timeline } from './JadwalView'
 import { ProLocked } from '../components/Pro'
+import { PickMemberAreaCard } from '../components/Invite'
 
 const NEXT: Record<Status, [Status, string]> = { todo: ['in_progress', 'Mulai →'], in_progress: ['done', 'Selesai →'], done: ['todo', '↺ Buka'] }
 
@@ -58,6 +59,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
       {owner && <button type="button" onClick={() => void s.restoreProject(P)} className="h-16 rounded-[8px] border-0 bg-fg px-6 text-[12.5px] font-semibold text-bg">Kembalikan</button>}
     </div>
   )
+  const areaCard = s.joinedProjectId === P.id && <PickMemberAreaCard mobile={mobile} projectName={P.name} />
 
   if (mobile) {
     return (
@@ -78,6 +80,7 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
           <div className="flex items-center gap-5"><ProgressBar pct={pr.pct} color={P.color} /><span className="font-mono text-[12px] font-semibold">{pr.pct}%</span></div>
           {sw}
         </div>
+        {areaCard && <div className="px-6">{areaCard}</div>}
         {empty}
         {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} mobile /> : canTimeline ? <Timeline mobile projectId={P.id} /> : <div className="px-6"><ProLocked ctx="tl" project={P} /></div>}
       </div>
@@ -88,8 +91,9 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
     <div className="flex flex-col gap-11">
       <button type="button" onClick={() => s.go('projects')} className="self-start border-0 bg-transparent p-0 text-[13px] font-medium text-fg3">‹ Proyek</button>
       {archivedBanner}
-      <div className="flex items-end gap-12">
-        <div className="flex flex-1 flex-col gap-4">
+      {/* On tablet widths the actions wrap below the title instead of squeezing it. */}
+      <div className="flex flex-wrap items-end gap-x-12 gap-y-7">
+        <div className="flex min-w-[280px] flex-1 flex-col gap-4">
           <div className="flex items-center gap-4">
             <span aria-hidden="true" className="size-5 rounded-[3px]" style={{ background: P.color }} />
             <span className="text-[12.5px] text-fg2">{area.name} · {fmt(P.start)} – {fmt(P.due)}</span>
@@ -101,13 +105,14 @@ export function ProjectView({ mobile }: { mobile: boolean }) {
             <span className="text-[12px] text-fg3">{pr.done}/{pr.total} tugas</span>
           </div>
         </div>
-        <div className="flex items-center gap-5">
+        <div className="ml-auto flex flex-wrap items-center gap-5">
           {members}
           <button type="button" onClick={() => s.setUI({ overlay: 'share' })} className="ml-4 h-17 rounded-[8px] border border-line2 bg-surface px-7 text-[13px] font-medium text-fg">Bagikan</button>
           <button type="button" onClick={() => s.setUI({ overlay: 'project' })} className="h-17 rounded-[8px] border border-line2 bg-surface px-7 text-[13px] font-medium text-fg">Kelola</button>
           {sw}
         </div>
       </div>
+      {areaCard}
       <div className="max-w-[780px]"><InlineComposer placeholder="Tambah tugas ke proyek ini…" /></div>
       {mode === 'list' && empty}
       {mode === 'list' ? listMode : mode === 'board' ? <Board tasks={pt} /> : canTimeline ? <Timeline projectId={P.id} /> : <ProLocked ctx="tl" project={P} />}
@@ -170,15 +175,15 @@ function BoardCard({ t, mobile, onDragStart, onDragEnd }: { t: Task; mobile?: bo
       className={`flex cursor-pointer flex-col gap-5 border-line bg-surface p-6 ${mobile ? 'rounded-[12px]' : 'rounded-md border shadow-[0_1px_2px_rgba(0,0,0,.04)] hover:border-line2'}`}
     >
       <div className={`leading-[1.35] ${mobile ? 'text-[14px]' : 'text-[13.5px]'} ${done ? 'text-fg3 line-through' : 'text-fg'}`}>{t.title}</div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <PrioBadge prio={t.prio} small />
-        <span className={`text-[11.5px] ${od ? 'text-high' : 'text-fg3'}`}>{t.due ? rel(t.due) : 'Tanpa tanggal'}</span>
+        <span className={`whitespace-nowrap text-[11.5px] ${od ? 'text-high' : 'text-fg3'}`}>{t.due ? rel(t.due) : 'Tanpa tanggal'}</span>
         <span className="flex-1" />
         {who && !mobile && <Avatar i={who.i} c={who.c} size={20} />}
         <button
           type="button"
           onClick={e => { e.stopPropagation(); s.setStatus(t.id, next) }}
-          className={`rounded-[6px] border border-line2 bg-transparent font-medium text-fg2 ${mobile ? 'h-16 rounded-[8px] px-5 text-[12px]' : 'px-3.5 py-2 text-[11px]'}`}
+          className={`whitespace-nowrap rounded-[6px] border border-line2 bg-transparent font-medium text-fg2 ${mobile ? 'h-16 rounded-[8px] px-5 text-[12px]' : 'px-3.5 py-2 text-[11px]'}`}
         >
           {label}
         </button>

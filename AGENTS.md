@@ -95,14 +95,14 @@ Jangan pakai nilai Tailwind "biasa" (`p-4` ≠ 16px di sini). Ukuran yang tidak 
 
 ### 4. Radius dan bayangan
 - Radius dari tema: `rounded-xs` 5, `rounded-sm` 7, `rounded-md` 10, `rounded-lg` 14, `rounded-xl` 16, `rounded-fab` 20, `rounded-t-sheet` 22, `rounded-pill` 99.
-- Kedalaman dibuat dengan border `line`, bukan bayangan. Bayangan hanya untuk: segmented aktif (`shadow-seg`), FAB (`shadow-fab`), modal/popover.
+- Kedalaman dibuat dengan border `line`, bukan bayangan. Bayangan hanya untuk: segmented aktif (`shadow-seg`), FAB (`shadow-fab`), modal/popover, navigasi bawah melayang di HP.
 - Tidak ada gradien, glassmorphism, atau ilustrasi dekoratif.
 
 ### 5. Desktop dan HP — selalu dua-duanya
 - `App.tsx` punya `useIsMobile()` (≤767px). Layar menerima prop `mobile` dan menggambar dua tata letak bila perlu.
 - Desktop: sidebar 236px, isi maks 780px (Hari Ini, Inbox) / 900px (Proyek), panel detail 360px di kanan, dialog = `Modal`.
-- HP: navigasi bawah 88px, FAB, padding bawah 110px, dialog = `Sheet` (bottom sheet), target sentuh ≥36px, tombol utama 44–48px.
-- Setiap perubahan UI harus dicek di **1280px dan 375px**, mode **terang dan gelap**.
+- HP: navigasi bawah berupa pil melayang (64px, maks. 400px, 12px dari bawah), isi maks. 600px di tengah, FAB, padding bawah 96px + safe-area, dialog = `Sheet` (bottom sheet), target sentuh ≥36px, tombol utama 44–48px.
+- Setiap perubahan UI harus benar di **1280px dan 375px**, mode **terang dan gelap**. Cara mengujinya mengikuti bagian **Pengujian**.
 
 ### 6. Komponen dan pola yang harus dipakai ulang
 - Butuh chip/segmented/badge/dialog? Pakai yang di `components/ui.tsx`. Jangan membuat versi kedua.
@@ -146,8 +146,25 @@ Jangan pakai nilai Tailwind "biasa" (`p-4` ≠ 16px di sini). Ukuran yang tidak 
 - Menambah fitur di luar PRD, terutama yang ada di anti-goal: wiki/editor catatan panjang, chat, custom fields, hierarki lebih dari 3 lapis.
 - Teks bahasa Inggris di UI, lorem ipsum, atau kalimat pemasaran yang tidak ada di desain.
 - Membuat ulang komponen yang sudah ada, atau gaya inline baru untuk hal yang sudah punya utilitas.
-- Menyatakan "selesai" tanpa `npm run build` lolos dan tanpa cek di browser (desktop + HP, terang + gelap).
+- Menyatakan "selesai" tanpa `npm run build` lolos, atau tanpa pengujian browser (oleh AI atau pemilik) untuk perubahan yang terlihat di browser. Lihat **Pengujian**.
 - Menulis ulang file besar tanpa diminta. Ubah sekecil mungkin yang menyelesaikan tugas.
+
+## Pengujian
+
+Bagian ini mengatur **cara** menguji, juga ketika dokumen serah terima meminta cek di browser. Tujuannya hemat token tanpa melewatkan pemeriksaan.
+
+1. `npm run build` dan tes skrip yang relevan (`npm run test:rules`, `npm run test:functions`) **selalu dijalankan sendiri**, tanpa bertanya.
+2. Bila perubahan terlihat di browser, **jangan langsung menguji di browser**. Setelah kode selesai, tanyakan dulu kepada pemilik, sertakan usulanmu dan alasannya:
+   - **a. Diuji AI:** hanya skenario penting. Hemat token: tanpa subagent, baca teks halaman, tangkapan layar hanya bila tampilannya memang perlu dilihat, cukup 1280px terang dan 375px gelap. Bila sebuah langkah gagal dua kali, berhenti dan laporkan.
+   - **b. Diuji manual oleh pemilik:** berikan panduan yang hanya berisi hal penting untuk perubahan itu:
+     - **Tujuan:** apa yang ingin dibuktikan.
+     - **Persiapan:** perintah yang dijalankan, serta akun dan data yang dibutuhkan.
+     - **Tabel:** nomor, langkah, hasil yang seharusnya.
+     - **Ukuran layar dan tema** yang perlu dicek.
+     - **Yang dikirim kembali** bila hasilnya berbeda (nomor langkah dan tangkapan layar).
+3. Jangan bertanya bila tidak ada yang bisa diuji di browser (misalnya hanya aturan keamanan, Functions, tes, atau dokumen).
+4. Bila pemilik memilih manual, laporkan **"menunggu pengujian manual"**, bukan "selesai", sampai pemilik menyampaikan hasilnya.
+5. Selalu sebutkan apa yang **belum** diuji.
 
 ## Status dan langkah berikutnya
 

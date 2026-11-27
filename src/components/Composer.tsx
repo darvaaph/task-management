@@ -78,15 +78,21 @@ export function InlineComposer({ placeholder }: { placeholder: string }) {
         {c.dues.map(([l, d]) => <Chip key={l} size="sm" active={c.curDue === d} onClick={() => c.setDue(d)}>{l}</Chip>)}
         <Divider />
         <PrioPicker value={c.prio} onChange={c.setPrio} />
-        {c.pics && (
-          <>
-            <Divider />
-            <span className="text-[12.5px] text-fg3">PIC</span>
-            {c.pics.map(k => <PicChip key={k} id={k} projectId={c.projId} active={c.curPic === k} onClick={() => c.setPic(k)} />)}
-          </>
-        )}
       </div>
       {c.picking && <DestList value={c.curDest} onPick={v => { c.setDest(v); c.setPicking(false) }} />}
+      {c.pics && <PicRow pics={c.pics} projectId={c.projId} value={c.curPic} onPick={c.setPic} />}
+    </div>
+  )
+}
+
+/** Own row so the "PIC" label never wraps away from its chips; chips wrap beside the label. */
+function PicRow({ pics, projectId, value, onPick, big }: { pics: string[]; projectId?: string; value: string; onPick: (id: string) => void; big?: boolean }) {
+  return (
+    <div role="group" aria-label="PIC" className="flex items-start gap-4">
+      <span aria-hidden="true" className={`flex flex-none items-center text-fg3 ${big ? 'h-18 text-[13px]' : 'h-14 text-[12.5px]'}`}>PIC</span>
+      <div className="flex min-w-0 flex-1 flex-wrap gap-3">
+        {pics.map(k => <PicChip key={k} big={big} id={k} projectId={projectId} active={value === k} onClick={() => onPick(k)} />)}
+      </div>
     </div>
   )
 }
@@ -134,12 +140,7 @@ export function QuickSheet({ onClose }: { onClose: () => void }) {
         {c.dues.map(([l, d]) => <Chip key={l} size="lg" active={c.curDue === d} onClick={() => c.setDue(d)}>{l}</Chip>)}
       </div>
       <PrioPicker size="lg" stretch value={c.prio} onChange={c.setPrio} />
-      {c.pics && (
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-[12.5px] text-fg3">PIC</span>
-          {c.pics.map(k => <PicChip big key={k} id={k} projectId={c.projId} active={c.curPic === k} onClick={() => c.setPic(k)} />)}
-        </div>
-      )}
+      {c.pics && <PicRow big pics={c.pics} projectId={c.projId} value={c.curPic} onPick={c.setPic} />}
       <button type="button" onClick={c.submit} className="h-25 rounded-[12px] border-0 bg-fg text-[15px] font-semibold text-bg">Simpan tugas</button>
     </Sheet>
   )

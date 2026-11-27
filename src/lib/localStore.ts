@@ -28,6 +28,8 @@ export interface Account {
   sound?: boolean
   /** Short vibration on completion and swipe threshold (Android only on the web). Off by default. */
   haptics?: boolean
+  /** Desktop sidebar shrunk to icons. Unset = automatic: icons below 1100 px (tablets), full on laptops. */
+  sidebar?: boolean
   /** Reminders already shown, as "task:due:key", so a reload never shows one twice. */
   notified?: string[]
 }
@@ -62,7 +64,7 @@ export interface StoredState {
   account?: Partial<Account>
   seeded?: boolean
   migrated?: boolean
-  /** Unmigrated pre-cloud local data, stashed when "Coba Mode Demo" replaced the root slot with sample data. */
+  /** Unmigrated pre-cloud local data, stashed when Mode Demo replaced the root slot with sample data. */
   legacy?: Data
 }
 
@@ -142,6 +144,14 @@ export const clearInviteUrl = () => {
   if (location.pathname.startsWith('/invite/')) {
     history.replaceState(null, '', '/')
   }
+}
+
+/** The demo has no button on the sign-in screen; it opens only from the /demo link. Consumes the path once. */
+export const takeDemoPath = (): boolean => {
+  if (typeof location === 'undefined' || typeof history === 'undefined') return false
+  if (!/^\/demo\/?$/.test(location.pathname)) return false
+  history.replaceState(null, '', '/')
+  return true
 }
 
 /** Heuristic for pre-1E browsers that stored untouched seed() data before loggedIn was ever true. */

@@ -42,7 +42,7 @@ Dua target utama produk ini:
 - **Validasi Paywall di Server:** Seluruh batas Gratis vs. Pro (*kuota Project aktif, kuota anggota, akses Timeline, tugas berulang, integrasi Google Calendar*) wajib divalidasi di backend/database agar tidak bisa diakali di klien.
 - **Sinkronisasi Status Pro Lintas Platform:** Status `pro_lifetime` tersimpan pada akun pengguna di *cloud*. Pembelian melalui *payment gateway* Web maupun **Google Play Billing** (di aplikasi Android Play Store) harus memperbarui status akun yang sama agar fitur Pro terbuka di semua perangkat pengguna.
 - **Kebijakan Google Play Store:** Akun developer personal baru di Google Play Console wajib melewati uji coba tertutup minimal **12 penguji aktif selama 14 hari berturut-turut** sebelum rilis publik, serta wajib memakai Google Play Billing untuk pembelian Pro di dalam aplikasi Android.
-- **Akses Demo Portofolio Tanpa Hambatan:** *Recruiter* harus bisa mencoba aplikasi lewat tombol **"Coba Demo"** di halaman masuk web tanpa wajib registrasi email terlebih dahulu.
+- **Akses Demo Portofolio Tanpa Hambatan:** *Recruiter* harus bisa mencoba aplikasi lewat tautan khusus **`/demo`** (dicantumkan di CV, portofolio, atau README) tanpa wajib registrasi email terlebih dahulu. Halaman masuk hanya menampilkan login Google.
 
 ---
 
@@ -122,7 +122,7 @@ Tiga opsi arsitektur telah dibandingkan:
 - Pengguna dapat menekan tombol **"Salin jadi Tugas"** pada acara Google Calendar untuk menjadikannya tugas yang bisa dicentang di aplikasi.
 
 ### 5.7 Mode Demo Portofolio (*Recruiter Sandbox*)
-- **Penyimpanan Lokal Instan:** Tombol **"Coba Mode Demo"** di halaman masuk langsung membuka aplikasi berisi data contoh (*Areas: Kuliah, Kantor, Pribadi; Tugas Lepas; Project Pribadi; serta simulasi Project Kelompok berisi anggota dummy seperti "Anda", "Budi", "Siti"* `[Keputusan Desain]`) yang tersimpan di penyimpanan lokal browser (`localStorage`/IndexedDB) tanpa perlu daftar akun dan tanpa menulis ke database cloud.
+- **Penyimpanan Lokal Instan:** Membuka tautan **`/demo`** langsung membuka aplikasi berisi data contoh (*Areas: Kuliah, Kantor, Pribadi; Tugas Lepas; Project Pribadi; serta simulasi Project Kelompok berisi anggota dummy seperti "Anda", "Budi", "Siti"* `[Keputusan Desain]`) yang tersimpan di penyimpanan lokal browser (`localStorage`/IndexedDB) tanpa perlu daftar akun dan tanpa menulis ke database cloud.
 - **Akses Fitur di Demo Mode:** Seluruh tampilan termasuk **Timeline View** dibuka dengan label **"Demo Preview"** agar *recruiter* dapat merasakan kualitas UI/UX penuhnya, sementara tombol aksi *Upgrade Pro* membuka **simulasi modal Checkout Pro** yang aman tanpa transaksi uang sungguhan (ditambah banner halus *"Data Demo hanya tersimpan di browser ini — Daftar gratis untuk menyimpan ke cloud & Share Project sungguhan"*).
 
 ### 5.8 Ringkasan Matriks Gratis vs. Pro (*Sekali Bayar / Lifetime*)
@@ -146,8 +146,8 @@ Tiga opsi arsitektur telah dibandingkan:
 ```mermaid
 flowchart TD
     Start["Buka Web / App Android"] --> Auth{"Status Sesi"}
-    Auth -- "Belum Login" --> Landing["Halaman Masuk (Login / Daftar / Coba Mode Demo)"]
-    Landing -- "Coba Mode Demo" --> Demo["Today (Local Sandbox + Timeline Demo Preview)"]
+    Auth -- "Belum Login" --> Landing["Halaman Masuk (Lanjutkan dengan Google)"]
+    Start -- "Tautan /demo" --> Demo["Today (Local Sandbox + Timeline Demo Preview)"]
     Landing -- "Login / Daftar" --> Today["Halaman Today (MIT Fokus + Overdue Replan)"]
     Auth -- "Sudah Login" --> Today
 

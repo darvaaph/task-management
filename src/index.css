@@ -4,8 +4,8 @@
 
 /* In @layer base so Tailwind utilities can override these. */
 @layer base {
-  /* Bottom inset for the phone nav: the home indicator where there is one, 24px otherwise. */
-  :root { --nav-pad: max(24px, env(safe-area-inset-bottom)); }
+  /* Gap under the floating phone nav: the home indicator where there is one, 12px otherwise. */
+  :root { --nav-pad: max(12px, env(safe-area-inset-bottom)); }
   html, body, #root { height: 100%; }
   body {
     margin: 0;

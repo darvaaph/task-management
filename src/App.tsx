@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { QuickSheet } from './components/Composer'
-import { InviteView, PickMemberAreaDialog } from './components/Invite'
+import { InviteView } from './components/Invite'
 import { ManageAreas, ManageProject } from './components/Manage'
 import { ShareProject } from './components/Share'
-import { Search, SearchButton } from './components/Search'
+import { Search, SearchButton, SearchIcon } from './components/Search'
 import { ReminderRunner, useNotifyPermission } from './components/Reminders'
 import { AccentPicker, ProBadge, ProScreen } from './components/Pro'
 import { AuthView } from './views/AuthView'
-import { IconCalendar, IconFolder, IconInbox, IconToday, LogoMark } from './components/icons'
+import { IconCalendar, IconFolder, IconInbox, IconSidebar, IconToday, LogoMark } from './components/icons'
 import { DetailPanel, DetailSheet } from './components/TaskDetail'
 import { Modal, Segmented, Sheet } from './components/ui'
 import { FREE_PROJECT_QUOTA } from './lib/constants'
@@ -60,7 +60,6 @@ export default function App() {
       {s.ui.overlay === 'share' && proj && <ShareProject project={proj} mobile={mobile} />}
       {s.ui.overlay === 'areas' && <ManageAreas mobile={mobile} />}
       {s.ui.pro && <ProScreen mobile={mobile} />}
-      {s.joinedProjectId && <PickMemberAreaDialog mobile={mobile} />}
       {s.pendingMigration && <LocalMigrationDialog mobile={mobile} />}
     </>
   )
@@ -84,9 +83,10 @@ export default function App() {
     return (
       <div className="flex h-full flex-col bg-bg">
         {s.account.demo && s.ui.banner && <DemoBanner mobile />}
-        <main key={pageKey} className="min-h-0 flex-1 overflow-auto pb-[calc(86px+var(--nav-pad))]">{page}</main>
-        <button type="button" aria-label="Tambah tugas" onClick={() => setQuick(true)} className="fixed right-10 bottom-[calc(80px+var(--nav-pad))] z-[4] size-29 rounded-fab border-0 bg-accent text-[30px] leading-none text-on-accent shadow-fab">+</button>
-        <nav aria-label="Menu utama" className="fixed inset-x-0 bottom-0 z-[4] grid h-[calc(64px+var(--nav-pad))] grid-cols-4 content-start border-t border-line bg-surface px-4 pt-3">
+        {/* Capped at 600px so small tablets (600–767px) keep a phone-width column instead of edge-to-edge rows. */}
+        <main key={pageKey} className="min-h-0 flex-1 overflow-auto pb-[calc(96px+var(--nav-pad))]"><div className="mx-auto w-full max-w-[600px]">{page}</div></main>
+        <button type="button" aria-label="Tambah tugas" onClick={() => setQuick(true)} className="fixed right-[max(12px,calc(50vw-288px))] bottom-[calc(78px+var(--nav-pad))] z-[4] size-29 rounded-fab border-0 bg-accent text-[30px] leading-none text-on-accent shadow-fab">+</button>
+        <nav aria-label="Menu utama" className="fixed bottom-[var(--nav-pad)] left-1/2 z-[4] grid w-[calc(100%-24px)] max-w-[400px] -translate-x-1/2 grid-cols-4 rounded-pill border border-line bg-surface p-2 shadow-[0_8px_24px_-12px_rgba(0,0,0,.25)]">
           {NAV.map(({ view, label, Icon }) => {
             const on = isActive(s.ui.view, view)
             return (
@@ -109,7 +109,7 @@ export default function App() {
 
   return (
     <div className="flex h-full bg-bg">
-      <Sidebar />
+      <Sidebar collapsed={s.account.sidebar ?? !wide} />
       <div className="flex min-w-0 flex-1 flex-col">
         {s.account.demo && s.ui.banner && <DemoBanner />}
         <main key={pageKey} className={`min-h-0 flex-1 overflow-auto ${s.ui.view === 'jadwal' ? 'px-14 pt-12 pb-10' : 'px-22 pt-16 pb-24'}`}>{page}</main>
@@ -122,8 +122,10 @@ export default function App() {
   )
 }
 
-function Sidebar() {
+function Sidebar({ collapsed }: { collapsed: boolean }) {
   const s = useStore()
+  const toggle = () => s.setAccount({ sidebar: !collapsed })
+  if (collapsed) return <SidebarRail onOpen={toggle} />
   const active = s.projects.filter(p => !p.archived)
   const ownedCount = active.filter(s.isOwner).length
   const todayOpen = s.todayTasks.filter(t => t.status !== 'done').length + s.overdueTasks.length
@@ -132,9 +134,10 @@ function Sidebar() {
   const item = 'flex items-center gap-5 rounded-[8px] border-0 px-5 text-left'
   return (
     <aside className="flex w-[236px] flex-none flex-col gap-6 overflow-auto border-r border-line bg-surface px-6 py-7">
-      <div className="flex items-center gap-4.5 px-4 py-1">
+      <div className="flex items-center gap-4.5 py-1 pl-4">
         <LogoMark size={22} />
-        <span className="font-display text-[17px] font-semibold">TaskFlow</span>
+        <span className="flex-1 font-display text-[17px] font-semibold">TaskFlow</span>
+        <button type="button" aria-label="Ciutkan sidebar" aria-expanded={true} title="Ciutkan sidebar" onClick={toggle} className={railBtn}><IconSidebar /></button>
       </div>
       <button type="button" onClick={() => s.setUI({ overlay: 'search' })} className="flex h-17 items-center justify-between rounded-[8px] border-0 bg-surface2 px-5 text-left text-[13px] text-fg3">
         <span>Cari cepat…</span><span className="font-mono text-[11px]">{searchShortcut}</span>
@@ -208,6 +211,32 @@ function Sidebar() {
         {s.account.demo && <button type="button" onClick={s.resetDemo} className="border-0 bg-transparent p-2 text-[12px] font-medium text-fg3">Reset</button>}
         <button type="button" onClick={s.signOut} className="border-0 bg-transparent p-2 text-[12px] font-medium text-fg3">Keluar</button>
       </div>
+    </aside>
+  )
+}
+
+const railBtn = 'grid size-18 flex-none place-items-center rounded-[8px] border-0 bg-transparent text-fg3 hover:bg-hover hover:text-fg'
+
+/** Icon-only sidebar. Areas, projects, Pro, theme, accent, sound and sign-out live in the full sidebar. */
+function SidebarRail({ onOpen }: { onOpen: () => void }) {
+  const s = useStore()
+  return (
+    <aside className="flex w-[64px] flex-none flex-col items-center gap-6 overflow-auto border-r border-line bg-surface py-7">
+      <div className="grid h-[30px] place-items-center"><LogoMark size={22} /></div>
+      <button type="button" aria-label="Buka sidebar" aria-expanded={false} title="Buka sidebar" onClick={onOpen} className={railBtn}><IconSidebar /></button>
+      <button type="button" aria-label={`Cari cepat (${searchShortcut})`} title={`Cari cepat (${searchShortcut})`} onClick={() => s.setUI({ overlay: 'search' })} className={`${railBtn} bg-surface2`}><SearchIcon /></button>
+      <nav aria-label="Menu utama" className="flex flex-col gap-2">
+        {NAV.map(({ view, label, Icon }) => {
+          const on = isActive(s.ui.view, view)
+          return (
+            <button key={view} type="button" aria-label={label} title={label} aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`${railBtn} ${on ? 'bg-surface2 text-accent' : ''}`}>
+              <Icon />
+            </button>
+          )
+        })}
+      </nav>
+      <div className="flex-1" />
+      <span aria-hidden="true" title={s.account.name} className="grid size-14 place-items-center rounded-full bg-accent text-[12px] font-semibold text-on-accent">{initial(s.account.name)}</span>
     </aside>
   )
 }
@@ -327,7 +356,7 @@ function Toast({ mobile }: { mobile?: boolean }) {
   const { toast } = useStore()
   if (!toast) return null
   return (
-    <div role="status" className={`animate-fade fixed left-1/2 z-[50] flex min-h-20 max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-7 rounded-md bg-fg py-4 pr-4 pl-9 text-[13px] font-medium text-bg shadow-[0_24px_60px_-20px_rgba(0,0,0,.5)] ${mobile ? 'bottom-[calc(152px+var(--nav-pad))]' : 'bottom-14'}`}>
+    <div role="status" className={`animate-fade fixed left-1/2 z-[50] flex min-h-20 max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-7 rounded-md bg-fg py-4 pr-4 pl-9 text-[13px] font-medium text-bg shadow-[0_24px_60px_-20px_rgba(0,0,0,.5)] ${mobile ? 'bottom-[calc(150px+var(--nav-pad))]' : 'bottom-14'}`}>
       <span className="py-1.5 pr-5">{toast.msg}</span>
       {toast.undo && <button type="button" onClick={toast.undo} className="h-15 rounded-sm border border-current bg-transparent px-6 text-[13px] font-semibold text-bg">Urungkan</button>}
     </div>
