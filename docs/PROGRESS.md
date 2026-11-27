@@ -50,6 +50,7 @@ Terakhir diperbarui: 27 November 2026. Perbarui file ini setiap selesai satu bag
 | Perbaikan Fase 2 (P2) — Daftar putih warna proyek (`AREA_COLORS` + `var(--accent)`) di `createProject` & `validProjectUpdate`, fallback aman `sanitizeProjectColor` ke `var(--accent)` di `cloudCodec.ts` & migrasi lokal `store.tsx`, serta audit nilai kontrol pengguna di `style`/`src`/`href` | `functions/index.js`, `firestore.rules`, `src/lib/constants.ts`, `src/lib/cloudCodec.ts`, `src/store.tsx`, `tests/rules/projects.test.mjs`, `tests/functions/collaboration.test.mjs`, `tests/functions/migration.test.mjs` | HANDOFF-FASE2-PERBAIKAN (P2) |
 | Perbaikan Fase 2 (P3) — Anggota di proyek pemilik Gratis tidak ditawari layar beli Pro (`canUpgradeFor` & `openPro` di store, `TaskDetail.tsx` durasi/ulangi/pengingat, `ProLocked` Timeline di `ProjectView.tsx` & `Pro.tsx`); `ProBadge` tetap terlihat dengan pesan *"Fitur ini mengikuti paket pemilik proyek."* | `src/store.tsx`, `src/components/TaskDetail.tsx`, `src/components/Pro.tsx`, `src/views/ProjectView.tsx`, `AGENTS.md`, `docs/DESIGN.md` | HANDOFF-FASE2-PERBAIKAN (P3) |
 | Perbaikan Fase 2 (P4) — Syarat Pro di `validTask`, `validProjectTask`, dan `validProjectReminder` hanya ditegakkan saat nilai Pro baru dipasang/diubah, sehingga tugas/pengingat Pro lama tetap bisa diubah statusnya atau dihapus setelah pemilik turun ke Gratis | `firestore.rules`, `tests/rules/firestore.test.mjs`, `tests/rules/projects.test.mjs` | HANDOFF-FASE2-PERBAIKAN (P4); seluruh perbaikan P1–P4 selesai, siap tinjauan ulang sebelum Fase 3 |
+| Fase 3A — Pemeriksaan siap rilis web beta: verifikasi dukungan runtime Node 24 vs Node 22 untuk campuran v1+v2, daftar 11 Function (`asia-southeast2`), audit `import.meta.env`, dan audit sisa kode emulator/Mode Demo | `docs/FASE3-PERIKSA.md` | HANDOFF-FASE3 §4 (3A); tanpa perubahan kode, menunggu persetujuan lanjut 3B (termasuk turun `engines.node` ke `"22"`) |
 
 ## Belum dibangun
 
@@ -68,6 +69,7 @@ Terakhir diperbarui: 27 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
+- **27 Nov 2026** — Fase 3A: pemeriksaan siap rilis ditulis di `docs/FASE3-PERIKSA.md` (branch `feat/rilis-beta`, tanpa perubahan kode). Temuan utama: `nodejs24` tidak didukung Cloud Functions 1st gen (`onUserCreated`), direkomendasikan turun ke `nodejs22` di langkah 3B.
 - **27 Nov 2026** — Rencana Fase 3 (rilis beta web) ditulis di `docs/HANDOFF-FASE3.md`: agent hanya menyiapkan kode dan panduan, pemilik yang mengaktifkan Blaze dan menjalankan deploy. `GEMINI.md` menunjuk ke tugas baru. Keputusan K1–K5 disetujui pemilik: ada Hapus akun, peringatan anggaran Rp 50.000/bulan, kontak privasi diisi pemilik, Pro penguji lewat konsol, gabung ke `main` setelah beta stabil seminggu.
 
 - **27 Nov 2026** — Keputusan pemilik dicatat: anggota boleh melihat & menyalin tautan undangan (`Share.tsx` sudah sesuai; batas anggota & Reset tautan tetap khusus pemilik), diselaraskan di `PRD.md` §5.4, `DESIGN.md` §6.25, `BACKEND.md` §2.4, dan `HANDOFF-FASE2-PERBAIKAN.md`.
