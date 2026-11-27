@@ -9,6 +9,11 @@ export const VALID_STATUS: Status[] = ['todo', 'in_progress', 'done']
 export const VALID_PRIO: Priority[] = ['high', 'med', 'low']
 export const VALID_REC: Recurrence[] = ['daily', 'weekly', 'weekdays', 'monthly']
 export const VALID_REMS = ['m10', 'm30', 'h1', 'd0', 'd1', 'd3']
+export const VALID_PROJECT_COLORS: readonly string[] = [...AREA_COLORS, 'var(--accent)']
+
+/** Coerce any off-list project colour (e.g. legacy local data or tampered server docs) to var(--accent). */
+export const sanitizeProjectColor = (val: unknown): string =>
+  typeof val === 'string' && VALID_PROJECT_COLORS.includes(val) ? val : 'var(--accent)'
 
 export const safeDocId = (raw: string, fallback: string) =>
   raw.trim().replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || fallback
@@ -61,7 +66,7 @@ export function docToProject(snap: QueryDocumentSnapshot, uid: string, memberAre
     name: typeof d.name === 'string' ? d.name : 'Proyek',
     // Never expose the project owner's private area to another member; fall back to null until member's own area is set.
     area: memberArea !== undefined ? memberArea : isOwner ? ownerArea : null,
-    color: typeof d.color === 'string' ? d.color : 'var(--accent)',
+    color: sanitizeProjectColor(d.color),
     start: typeof d.start === 'string' ? d.start : today(),
     due: typeof d.due === 'string' ? d.due : today(),
     members: memberIds,

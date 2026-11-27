@@ -21,6 +21,17 @@ const PRO_MEMBER_QUOTA = 20
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,100}$/
+// Allowed project marker colours: AREA_COLORS + 'var(--accent)'.
+// Must be updated together with src/lib/constants.ts (AREA_COLORS) and firestore.rules (validProjectUpdate).
+const VALID_PROJECT_COLORS = new Set([
+  'var(--area-kuliah)',
+  'var(--area-kantor)',
+  'var(--area-pribadi)',
+  'oklch(0.62 0.14 50)',
+  'oklch(0.6 0.11 195)',
+  'oklch(0.6 0.15 0)',
+  'var(--accent)',
+])
 
 function requireAuth(request) {
   const uid = request.auth?.uid
@@ -127,7 +138,10 @@ export const createProject = onCall({ region: REGION }, async (request) => {
   }
 
   const name = requireNonEmptyString(data.name, 200, 'Nama proyek')
-  const color = requireNonEmptyString(data.color, 60, 'Warna proyek')
+  if (typeof data.color !== 'string' || !VALID_PROJECT_COLORS.has(data.color)) {
+    throw new HttpsError('invalid-argument', 'Warna proyek tidak valid.')
+  }
+  const color = data.color
   const start = requireIsoDate(data.start, 'Tanggal mulai')
   const due = requireIsoDate(data.due, 'Tanggal tenggat')
   if (start > due) {

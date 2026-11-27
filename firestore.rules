@@ -67,7 +67,7 @@ rules_version = '2';
 //   Owner-updatable fields:
 //     - name: string (required, trimmed non-empty, <= 200 chars)
 //     - ownerArea: string | null (optional, <= 100 chars)
-//     - color: string (required, trimmed non-empty, <= 60 chars)
+//     - color: string (required, AREA_COLORS + 'var(--accent)')
 //     - start: string (required, YYYY-MM-DD, <= 10 chars)
 //     - due: string (required, YYYY-MM-DD, <= 10 chars)
 //     - sections: list<string> (required, <= 50 items, joined length <= 5000 chars)
@@ -354,7 +354,17 @@ service cloud.firestore {
       ])
       && isNonEmptyString(d.get('name', null), 200)
       && optStr(d.get('ownerArea', null), 100)
-      && isNonEmptyString(d.get('color', null), 60)
+      // Allowed project colours: AREA_COLORS + 'var(--accent)'.
+      // Must be updated together with src/lib/constants.ts (AREA_COLORS) and functions/index.js (VALID_PROJECT_COLORS).
+      && d.get('color', null) in [
+        'var(--area-kuliah)',
+        'var(--area-kantor)',
+        'var(--area-pribadi)',
+        'oklch(0.62 0.14 50)',
+        'oklch(0.6 0.11 195)',
+        'oklch(0.6 0.15 0)',
+        'var(--accent)'
+      ]
       && isNonEmptyString(d.get('start', null), 10)
       && isNonEmptyString(d.get('due', null), 10)
       && d.get('sections', null) is list

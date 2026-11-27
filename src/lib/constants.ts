@@ -31,7 +31,11 @@ export const FREE_PROJECT_QUOTA = 5
 export const FREE_MEMBER_QUOTA = 3
 export const PRO_MEMBER_QUOTA = 20
 
-/** Area colours: the three defaults, then extra marker colours (markers only, never text). */
+/**
+ * Area colours: the three defaults, then extra marker colours (markers only, never text).
+ * Project colours = AREA_COLORS + 'var(--accent)'; keep in sync with validProjectUpdate
+ * (firestore.rules) and VALID_PROJECT_COLORS (functions/index.js).
+ */
 export const AREA_COLORS = ['var(--area-kuliah)', 'var(--area-kantor)', 'var(--area-pribadi)', 'oklch(0.62 0.14 50)', 'oklch(0.6 0.11 195)', 'oklch(0.6 0.15 0)']
 
 /** Starting areas offered at sign-up. Each keeps the AREA_COLORS entry at its index; the first three are pre-ticked. */

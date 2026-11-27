@@ -18,6 +18,7 @@ import {
   projectTaskToCloudDoc,
   randomInviteToken,
   safeDocId,
+  sanitizeProjectColor,
   sortCloudTasks,
   taskPatchToCloud,
   taskToCloudDoc,
@@ -1443,7 +1444,7 @@ function useStoreValue() {
 
       if (patch.name !== undefined) textPatch.name = patch.name
       if (patch.area !== undefined) immediate.ownerArea = patch.area
-      if (patch.color !== undefined) immediate.color = patch.color
+      if (patch.color !== undefined) immediate.color = sanitizeProjectColor(patch.color)
       if (patch.start !== undefined) immediate.start = patch.start
       if (patch.due !== undefined) immediate.due = patch.due
       if (patch.sections !== undefined) immediate.sections = patch.sections
@@ -2053,7 +2054,7 @@ function useStoreValue() {
 
   const createProject = useCallback(async (name: string, area: string | null, due: ISODate): Promise<boolean> => {
     const a = dataRef.current.areas.find(x => x.id === area)
-    const color = a?.color ?? 'var(--accent)'
+    const color = sanitizeProjectColor(a?.color)
     const curUid = cloudUidRef.current
     const fb = fbRef.current
     if (curUid && fb) {
@@ -2389,7 +2390,7 @@ function useStoreValue() {
         setMigrationStatus(`Memindahkan proyek ${i + 1} dari ${orderedProjects.length}…`)
 
         const name = p.name.trim().slice(0, 200) || 'Proyek tanpa nama'
-        const color = p.color?.trim().slice(0, 60) || AREA_COLORS[0]
+        const color = sanitizeProjectColor(p.color)
         const due = typeof p.due === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.due) ? p.due : today()
         const rawStart = typeof p.start === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.start) ? p.start : due
         const start = rawStart <= due ? rawStart : due

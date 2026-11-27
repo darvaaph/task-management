@@ -916,4 +916,26 @@ describe('Serangan 12 & 13 — Riwayat aktivitas proyek', () => {
     await assertFails(ownerDb.doc('deletedProjects/proj-deleted-1').update({ ownerId: OUTSIDER }))
     await assertFails(ownerDb.doc('deletedProjects/proj-deleted-1').delete())
   })
+
+  it('15. menolak color proyek berisi url(...) atau warna di luar daftar sah, dan menerima setiap warna sah AREA_COLORS + var(--accent)', async () => {
+    const ownerDb = authedDb(FREE_OWNER)
+
+    await assertFails(ownerDb.doc('projects/proj-free-1').update({ color: 'url(https://contoh.test/lacak.png)' }))
+    await assertFails(ownerDb.doc('projects/proj-free-1').update({ color: '#ff0000' }))
+    await assertFails(ownerDb.doc('projects/proj-free-1').update({ color: 'red' }))
+    await assertFails(ownerDb.doc('projects/proj-free-1').update({ color: 'var(--high)' }))
+
+    const validColors = [
+      'var(--area-kuliah)',
+      'var(--area-kantor)',
+      'var(--area-pribadi)',
+      'oklch(0.62 0.14 50)',
+      'oklch(0.6 0.11 195)',
+      'oklch(0.6 0.15 0)',
+      'var(--accent)',
+    ]
+    for (const color of validColors) {
+      await assertSucceeds(ownerDb.doc('projects/proj-free-1').update({ color }))
+    }
+  })
 })

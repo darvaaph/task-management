@@ -732,3 +732,43 @@ describe('Perbaikan P1 — Perlindungan projectId pada createProject & nisan del
     )
   })
 })
+
+describe('Perbaikan P2 — Daftar putih warna proyek pada createProject', () => {
+  it('menolak url(...) dan warna bebas di luar AREA_COLORS + var(--accent), serta menerima seluruh warna sah termasuk proyek Tanpa area', async () => {
+    const user = await registerUser('p2-color', 'Dewi Warna', 'pro')
+
+    for (const badColor of ['url(https://contoh.test/lacak.png)', '#ff0000', 'red', 'var(--high)', ' var(--accent) ']) {
+      await assert.rejects(
+        () =>
+          user.call('createProject')({
+            name: 'Proyek Warna Ilegal',
+            ownerArea: null,
+            color: badColor,
+            start: '2026-11-26',
+            due: '2026-12-20',
+          }),
+        (err) => err.code === 'functions/invalid-argument',
+      )
+    }
+
+    const validColors = [
+      'var(--area-kuliah)',
+      'var(--area-kantor)',
+      'var(--area-pribadi)',
+      'oklch(0.62 0.14 50)',
+      'oklch(0.6 0.11 195)',
+      'oklch(0.6 0.15 0)',
+      'var(--accent)',
+    ]
+    for (const color of validColors) {
+      const res = await user.call('createProject')({
+        name: `Proyek ${color}`,
+        ownerArea: color === 'var(--accent)' ? null : 'kuliah',
+        color,
+        start: '2026-11-26',
+        due: '2026-12-20',
+      })
+      assert.ok(res.data.projectId)
+    }
+  })
+})

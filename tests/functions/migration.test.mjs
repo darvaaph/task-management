@@ -79,6 +79,16 @@ async function registerUser(tag, displayName, plan = 'free') {
   return { ...session, uid, name: displayName }
 }
 
+const VALID_PROJECT_COLORS = new Set([
+  'var(--area-kuliah)',
+  'var(--area-kantor)',
+  'var(--area-pribadi)',
+  'oklch(0.62 0.14 50)',
+  'oklch(0.6 0.11 195)',
+  'oklch(0.6 0.15 0)',
+  'var(--accent)',
+])
+
 /** Mirror src/store.tsx migrateLocalData deterministic IDs and PIC mapping for a subset/run. */
 async function migrateProjectsBatch(session, localProjects, localTasks, { stopAfter = Infinity } = {}) {
   const uidTag = session.uid.replace(/[^a-zA-Z0-9_-]/g, '') || 'u'
@@ -90,13 +100,14 @@ async function migrateProjectsBatch(session, localProjects, localTasks, { stopAf
     if (i >= stopAfter) break
     const p = localProjects[i]
     const cloudPid = `mig_${uidTag}_${p.id}`.slice(0, 100)
+    const color = typeof p.color === 'string' && VALID_PROJECT_COLORS.has(p.color) ? p.color : 'var(--accent)'
     let alreadyExisted = false
     try {
       const res = await callCreate({
         projectId: cloudPid,
         name: p.name,
         ownerArea: p.area,
-        color: p.color,
+        color,
         start: p.start,
         due: p.due,
         sections: p.sections,
@@ -160,7 +171,7 @@ describe('Cloud Functions 2F — migrasi proyek lokal, idempotensi, PIC, dan kuo
     const user = await registerUser('mig-cancel', 'Maya Lokal', 'free')
     const projects = [
       { id: 'lp1', name: 'Lokal 1', area: null, color: 'var(--accent)', start: '2026-12-01', due: '2026-12-20', sections: ['Tahap 1'] },
-      { id: 'lp2', name: 'Lokal 2', area: null, color: 'var(--accent)', start: '2026-12-01', due: '2026-12-22', sections: [] },
+      { id: 'lp2', name: 'Lokal 2', area: null, color: '#custom-offlist', start: '2026-12-01', due: '2026-12-22', sections: [] },
       { id: 'lp3', name: 'Lokal 3', area: null, color: 'var(--accent)', start: '2026-12-01', due: '2026-12-24', sections: [] },
     ]
     const tasks = [
