@@ -1,7 +1,7 @@
 import { InlineComposer } from '../components/Composer'
 import { TaskRow } from '../components/TaskRow'
 import { EmptyCard, ProgressBar, SectionLabel, btnSecondary } from '../components/ui'
-import { fmt, fmtLong, dow, DAYS, today } from '../lib/dates'
+import { addDays, fmt, fmtLong, dow, DAYS, today } from '../lib/dates'
 import { byOpen, daysLeftLabel, projectProgress } from '../lib/logic'
 import { useStore } from '../store'
 
@@ -71,6 +71,15 @@ export function TodayView({ mobile, onSearchProfile }: { mobile: boolean; onSear
     </section>
   )
 
+  // A quiet close to the day: no confetti (DESIGN §6.32), just a line and a way forward.
+  const allDone = todayT.length > 0 && done === todayT.length && overdue.length === 0 && (
+    <section role="status" className="flex flex-col items-start gap-3 rounded-lg border border-line bg-surface px-9 py-8">
+      <span className="font-display text-[17px] font-semibold">Semua tugas hari ini beres.</span>
+      <span className="text-[13.5px] leading-normal text-fg2">Istirahat dulu, atau intip apa yang menunggu besok.</span>
+      <button type="button" onClick={() => s.go('jadwal', { cal: mobile ? 'month' : 'week', calDay: addDays(t0, 1) })} className={`${btnSecondary} mt-2`}>Lihat besok</button>
+    </section>
+  )
+
   const lists = todayT.length === 0 ? (
     <EmptyCard title="Hari ini masih kosong" action={<button type="button" onClick={() => s.go('inbox')} className={`${btnSecondary} mt-2`}>Buka Inbox</button>}>
       Tidak ada tugas bertanggal hari ini. {mobile ? 'Catat lewat tombol +' : 'Catat lewat kolom di atas'}, atau beri tanggal pada tugas di Inbox.
@@ -109,6 +118,7 @@ export function TodayView({ mobile, onSearchProfile }: { mobile: boolean; onSear
           </div>
         </div>
         {overdueBlock}
+        {allDone}
         <Onboarding mobile />
         {lists}
       </div>
@@ -129,6 +139,7 @@ export function TodayView({ mobile, onSearchProfile }: { mobile: boolean; onSear
       </div>
       <InlineComposer placeholder="Tambah tugas… tekan Enter" />
       {overdueBlock}
+      {allDone}
       <Onboarding mobile={false} />
       {lists}
       {active.length > 0 && (

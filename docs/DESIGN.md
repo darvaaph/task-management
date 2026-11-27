@@ -175,6 +175,7 @@ Batas bawah: tidak ada teks di bawah **10 px**, dan teks 10–11 px hanya dalam 
 - Tinggi minimal 50 px, radius 10.
 - Urutan kiri ke kanan: lingkaran centang (area sentuh 38 × 38, lingkaran 20 px dengan border warna prioritas) → judul + meta (titik area/proyek + nama + jam) → tombol "Geser" (jika terlambat) → tanggal → avatar PIC (proyek bersama saja) → badge prioritas.
 - Selesai: judul dicoret, warna `--fg3`, lingkaran terisi `--fg3`.
+- Baris ringkas (HP dan daftar sempit): badge hanya untuk **Tinggi**. Sedang dan Rendah ditulis sebagai teks di akhir baris meta ("Pribadi · Sedang"), jadi label prioritas tetap ada dan judul mendapat ruang lebih.
 - Terpilih: latar `--accent-soft`.
 
 ### 6.2 Tombol
@@ -218,7 +219,7 @@ Hover desktop: border menjadi `--line2`.
 
 - **Pil melayang:** latar `--surface`, border `--line`, radius pill, padding 4 px, tombol setinggi 54 px (total 64 px), lebar layar dikurangi 24 px dengan maksimal 400 px di tengah. Jarak bawah `max(12 px, env(safe-area-inset-bottom))`. FAB berada 14 px di atas pil, rata dengan tepi kanan kolom isi; toast di atas FAB. Padding bawah halaman 96 px ditambah jarak bawah yang sama.
 - Di HP, isi halaman dibatasi 600 px di tengah, jadi layar 600–767 px (iPad mini, HP lipat) tetap memakai kolom selebar HP. Empat menu: **Hari Ini · Inbox · Jadwal · Proyek**.
-- Aktif: ikon di dalam pill 56 × 30 berlatar `--accent-soft`, ikon dan label `--accent`, label 600.
+- Aktif: ikon di dalam pill 56 × 30 berlatar `--accent-soft`, ikon dan label `--accent`, label 600. Pill ini satu elemen yang **bergeser** ke menu yang dipilih (`--dur-sheet`, `--ease-sheet`), sementara warna ikon dan label berganti dengan `--dur-base`. Saat reduced motion pill langsung pindah.
 - Tidak aktif: tanpa pill, warna `--fg2`, label 500.
 - Fitur terkunci (Pro) **tidak boleh** jadi menu utama.
 
@@ -365,8 +366,10 @@ Tombol "Bagikan" di header detail proyek (desktop dan HP).
 ### 6.26 Keadaan kosong dan akun baru
 
 Akun baru dari Daftar mulai **kosong** (area yang dipilih di 6.29 tetap ada). Hari Ini menampilkan kartu sambutan dengan 3 langkah (catat tugas, buat proyek, cek area) yang tercentang otomatis dan bisa dilewati. Setiap halaman punya keadaan kosong sendiri yang menjelaskan apa yang akan muncul dan memberi satu aksi: Hari Ini (Buka Inbox), Inbox, Proyek (+ Proyek baru), Arsip, detail proyek.
+- **Semua tugas hari ini selesai** (dan tidak ada yang terlambat): kartu `--surface` berborder `--line` di atas daftar, `role="status"`, judul *"Semua tugas hari ini beres."*, keterangan *"Istirahat dulu, atau intip apa yang menunggu besok."*, tombol sekunder **Lihat besok** (Jadwal pada tanggal besok: Minggu di desktop, Bulan di HP). Tanpa konfeti.
 
 ### 6.27 Tampilan Mingguan
+- Minggu ini dibuka langsung di garis "sekarang" dengan sekitar 1,5 jam konteks di atasnya, bukan dari 07:00.
 
 **Desktop:** kisi 7 kolom (Senin sampai Minggu) dengan kolom jam 56 px di kiri.
 - Baris atas (lengket saat scroll): nama hari mono + tanggal. Hari ini = pill aksen, hari terpilih = pill `--surface2`.
@@ -405,6 +408,7 @@ Istilahnya **usap**, karena "geser" sudah berarti "Geser ke Hari Ini". Hanya akt
 ### 6.32 Gerak, suara, dan getaran
 
 - Gerak memakai token `--dur-*` dan `--ease-*` (otomatis 0 saat `prefers-reduced-motion`). Centang: lingkaran memantul 0.85→1.1→1 (`animate-pop`, `--dur-sheet`) hanya saat user mencentang, bukan saat baris yang sudah selesai muncul; warna lingkaran dan judul berganti halus. Progress bar beranimasi dengan `--dur-bar`. Tanpa konfeti.
+- Pindah halaman: isi halaman memudar masuk (`animate-fade`, `--dur-base`). Penanda menu aktif di sidebar (penuh dan ciut) dan navigasi bawah bergeser ke menu baru (`--dur-sheet`, `--ease-sheet`).
 - Suara: satu bunyi lembut (sekitar 0,2 detik, dibuat dengan Web Audio tanpa file) saat tugas selesai lewat centang, usap, Board, atau status. **Mati secara bawaan.** Sakelar Mati/Nyala (`Segmented`): "Suara saat selesai" di profil HP, "Suara" di sidebar desktop. Perilaku terhadap tombol senyap iPhone perlu diuji di perangkat.
 - Getaran: 12 ms saat tugas selesai, 8 ms saat ambang usap terlewati. **Mati secara bawaan.** Sakelar "Getaran" di profil HP hanya muncul di perangkat sentuh yang mendukung Vibration API. Web: Vibration API (Android). iOS Safari tidak mendukung; getaran iOS menunggu paket Capacitor.
 
@@ -453,6 +457,8 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.21 (27 Nov 2026):** Badge prioritas ringkas (§6.1), kartu "Semua tugas hari ini beres." (§6.26), Minggu dibuka di jam sekarang (§6.27), fade antarhalaman dan penanda menu geser di sidebar (§6.32).
+- **0.20 (27 Nov 2026):** Pill menu aktif di navigasi bawah HP bergeser saat berpindah menu (§6.8).
 - **0.19 (27 Nov 2026):** Navigasi bawah HP jadi pil melayang (maks. 400 px), isi HP dibatasi 600 px, FAB rata tepi kolom (§6.8).
 - **0.18 (27 Nov 2026):** Sidebar desktop bisa diciutkan jadi ikon 64 px, ciut otomatis di tablet (§6.28). Header Jadwal turun baris di bawah 1100 px.
 - **0.17 (27 Nov 2026):** Tombol "Coba Mode Demo" dihapus dari layar Masuk; Mode Demo dibuka lewat tautan `/demo` (§6.20).

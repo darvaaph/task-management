@@ -34,6 +34,18 @@ const ONOFF = [{ value: 'off' as const, label: 'Mati' }, { value: 'on' as const,
 const onoff = (v?: boolean) => (v ? 'on' : 'off')
 
 const isActive = (cur: View, v: View) => cur === v || (v === 'projects' && cur === 'project')
+const navIndex = (cur: View) => Math.max(0, NAV.findIndex(n => isActive(cur, n.view)))
+
+/** Shared highlight behind the sidebar menu that slides to the active item (step = item height + gap, px). */
+function NavSlide({ index, step, className }: { index: number; step: number; className: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute top-0 left-0 bg-surface2 transition-transform duration-[var(--dur-sheet)] ease-[var(--ease-sheet)] ${className}`}
+      style={{ transform: `translateY(${index * step}px)` }}
+    />
+  )
+}
 
 export default function App() {
   const s = useStore()
@@ -84,14 +96,24 @@ export default function App() {
       <div className="flex h-full flex-col bg-bg">
         {s.account.demo && s.ui.banner && <DemoBanner mobile />}
         {/* Capped at 600px so small tablets (600–767px) keep a phone-width column instead of edge-to-edge rows. */}
-        <main key={pageKey} className="min-h-0 flex-1 overflow-auto pb-[calc(96px+var(--nav-pad))]"><div className="mx-auto w-full max-w-[600px]">{page}</div></main>
+        <main key={pageKey} className="min-h-0 flex-1 overflow-auto pb-[calc(96px+var(--nav-pad))]"><div className="animate-fade mx-auto w-full max-w-[600px]">{page}</div></main>
         <button type="button" aria-label="Tambah tugas" onClick={() => setQuick(true)} className="fixed right-[max(12px,calc(50vw-288px))] bottom-[calc(78px+var(--nav-pad))] z-[4] size-29 rounded-fab border-0 bg-accent text-[30px] leading-none text-on-accent shadow-fab">+</button>
         <nav aria-label="Menu utama" className="fixed bottom-[var(--nav-pad)] left-1/2 z-[4] grid w-[calc(100%-24px)] max-w-[400px] -translate-x-1/2 grid-cols-4 rounded-pill border border-line bg-surface p-2 shadow-[0_8px_24px_-12px_rgba(0,0,0,.25)]">
+          {/* One shared highlight that slides between tabs. It copies a tab's layout (with an invisible label) so the pill lines up with the icon. */}
+          <span aria-hidden="true" className="pointer-events-none absolute inset-2">
+            <span
+              className="flex h-27 w-1/4 flex-col items-center justify-center gap-1.5 text-[11.5px] transition-transform duration-[var(--dur-sheet)] ease-[var(--ease-sheet)]"
+              style={{ transform: `translateX(${navIndex(s.ui.view) * 100}%)` }}
+            >
+              <span className="h-15 w-28 rounded-pill bg-accent-soft" />
+              <span className="invisible">{NAV[0].label}</span>
+            </span>
+          </span>
           {NAV.map(({ view, label, Icon }) => {
             const on = isActive(s.ui.view, view)
             return (
-              <button key={view} type="button" aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`flex h-27 flex-col items-center justify-center gap-1.5 border-0 bg-transparent p-0 text-[11.5px] ${on ? 'font-semibold text-accent' : 'font-medium text-fg2'}`}>
-                <span className={`grid h-15 w-28 place-items-center rounded-pill transition-colors ${on ? 'bg-accent-soft' : ''}`}><Icon size={22} sw={1.9} /></span>
+              <button key={view} type="button" aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`relative flex h-27 flex-col items-center justify-center gap-1.5 border-0 bg-transparent p-0 text-[11.5px] transition-colors duration-[var(--dur-base)] ${on ? 'font-semibold text-accent' : 'font-medium text-fg2'}`}>
+                <span className="grid h-15 w-28 place-items-center"><Icon size={22} sw={1.9} /></span>
                 {label}
               </button>
             )
@@ -112,7 +134,7 @@ export default function App() {
       <Sidebar collapsed={s.account.sidebar ?? !wide} />
       <div className="flex min-w-0 flex-1 flex-col">
         {s.account.demo && s.ui.banner && <DemoBanner />}
-        <main key={pageKey} className={`min-h-0 flex-1 overflow-auto ${s.ui.view === 'jadwal' ? 'px-14 pt-12 pb-10' : 'px-22 pt-16 pb-24'}`}>{page}</main>
+        <main key={pageKey} className={`animate-fade min-h-0 flex-1 overflow-auto ${s.ui.view === 'jadwal' ? 'px-14 pt-12 pb-10' : 'px-22 pt-16 pb-24'}`}>{page}</main>
       </div>
       {sel && <DetailPanel key={sel.id} task={sel} floating={!wide} />}
       {overlays}
@@ -142,11 +164,12 @@ function Sidebar({ collapsed }: { collapsed: boolean }) {
       <button type="button" onClick={() => s.setUI({ overlay: 'search' })} className="flex h-17 items-center justify-between rounded-[8px] border-0 bg-surface2 px-5 text-left text-[13px] text-fg3">
         <span>Cari cepat…</span><span className="font-mono text-[11px]">{searchShortcut}</span>
       </button>
-      <nav aria-label="Menu utama" className="flex flex-col gap-1">
+      <nav aria-label="Menu utama" className="relative flex flex-col gap-1">
+        <NavSlide index={navIndex(s.ui.view)} step={36} className="h-17 w-full rounded-[8px]" />
         {NAV.map(({ view, label, Icon }) => {
           const on = isActive(s.ui.view, view)
           return (
-            <button key={view} type="button" aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`${item} h-17 text-[14px] ${on ? 'bg-surface2 font-semibold text-fg' : 'bg-transparent font-medium text-fg2 hover:bg-hover'}`}>
+            <button key={view} type="button" aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`${item} relative h-17 bg-transparent text-[14px] transition-colors duration-[var(--dur-base)] ${on ? 'font-semibold text-fg' : 'font-medium text-fg2 hover:bg-hover'}`}>
               <span className={`grid ${on ? 'text-accent' : 'text-fg3'}`}><Icon /></span>
               <span className="flex-1">{label}</span>
               {counts[view] != null && <span className="font-mono text-[11px] text-fg3">{counts[view]}</span>}
@@ -225,11 +248,12 @@ function SidebarRail({ onOpen }: { onOpen: () => void }) {
       <div className="grid h-[30px] place-items-center"><LogoMark size={22} /></div>
       <button type="button" aria-label="Buka sidebar" aria-expanded={false} title="Buka sidebar" onClick={onOpen} className={railBtn}><IconSidebar /></button>
       <button type="button" aria-label={`Cari cepat (${searchShortcut})`} title={`Cari cepat (${searchShortcut})`} onClick={() => s.setUI({ overlay: 'search' })} className={`${railBtn} bg-surface2`}><SearchIcon /></button>
-      <nav aria-label="Menu utama" className="flex flex-col gap-2">
+      <nav aria-label="Menu utama" className="relative flex flex-col gap-2">
+        <NavSlide index={navIndex(s.ui.view)} step={40} className="size-18 rounded-[8px]" />
         {NAV.map(({ view, label, Icon }) => {
           const on = isActive(s.ui.view, view)
           return (
-            <button key={view} type="button" aria-label={label} title={label} aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`${railBtn} ${on ? 'bg-surface2 text-accent' : ''}`}>
+            <button key={view} type="button" aria-label={label} title={label} aria-current={on ? 'page' : undefined} onClick={() => s.go(view)} className={`${railBtn} relative transition-colors duration-[var(--dur-base)] ${on ? 'text-accent hover:bg-transparent' : ''}`}>
               <Icon />
             </button>
           )
@@ -356,7 +380,7 @@ function Toast({ mobile }: { mobile?: boolean }) {
   const { toast } = useStore()
   if (!toast) return null
   return (
-    <div role="status" className={`animate-fade fixed left-1/2 z-[50] flex min-h-20 max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-7 rounded-md bg-fg py-4 pr-4 pl-9 text-[13px] font-medium text-bg shadow-[0_24px_60px_-20px_rgba(0,0,0,.5)] ${mobile ? 'bottom-[calc(150px+var(--nav-pad))]' : 'bottom-14'}`}>
+    <div role="status" className={`animate-fade fixed left-1/2 z-[50] flex min-h-20 w-max max-w-[calc(100vw-32px)] -translate-x-1/2 items-center gap-7 rounded-md bg-fg py-4 pr-4 pl-9 text-[13px] font-medium text-bg shadow-[0_24px_60px_-20px_rgba(0,0,0,.5)] ${mobile ? 'bottom-[calc(150px+var(--nav-pad))]' : 'bottom-14'}`}>
       <span className="py-1.5 pr-5">{toast.msg}</span>
       {toast.undo && <button type="button" onClick={toast.undo} className="h-15 rounded-sm border border-current bg-transparent px-6 text-[13px] font-semibold text-bg">Urungkan</button>}
     </div>

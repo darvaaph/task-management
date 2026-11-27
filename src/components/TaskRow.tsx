@@ -100,6 +100,8 @@ export function TaskRow({ task: t, compact }: { task: Task; compact?: boolean })
   const showDate = t.due != null && t.due !== today() && !od
   const assignee = proj && t.assignee && proj.members.length > 1 ? s.personOf(t.assignee, proj.id) : null
   const selected = s.ui.taskId === t.id
+  // Narrow rows keep the badge only for Tinggi; Sedang/Rendah move to the meta line so the title gets the room.
+  const quietPrio = Boolean(compact) && t.prio !== 'high'
   // Pops only when the user ticks it, not when an already-done row mounts.
   const [pop, setPop] = useState(false)
   const [scheduling, setScheduling] = useState(false)
@@ -151,6 +153,7 @@ export function TaskRow({ task: t, compact }: { task: Task; compact?: boolean })
               <span aria-hidden="true" className="size-3.5 flex-none rounded-[2px]" style={{ background: metaColor }} />
               <span className="truncate">{meta}</span>
               {time && <span className="flex-none font-mono text-[11px]">{time}</span>}
+              {quietPrio && <span className="flex-none">· {p.label}</span>}
             </div>
           </div>
           {od && (
@@ -164,7 +167,7 @@ export function TaskRow({ task: t, compact }: { task: Task; compact?: boolean })
           )}
           {showDate && <span className="flex-none whitespace-nowrap text-meta text-fg3">{rel(t.due)}</span>}
           {assignee && <span title={assignee.name}><Avatar i={assignee.i} c={assignee.c} /></span>}
-          <PrioBadge prio={t.prio} />
+          {!quietPrio && <PrioBadge prio={t.prio} />}
         </div>
       </div>
       {scheduling && <ScheduleDialog task={t} onClose={() => setScheduling(false)} />}

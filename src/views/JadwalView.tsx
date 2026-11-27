@@ -295,9 +295,18 @@ function WeekGrid() {
   const t0 = today()
   const now = new Date()
   const nowTop = (now.getHours() + now.getMinutes() / 60 - HR0) * HH - 1
+  const scroller = useRef<HTMLDivElement>(null)
+  const nowLine = useRef<HTMLSpanElement>(null)
+  // Open the current week at "now" (with ~1.5 h of context above) instead of at 07:00.
+  useEffect(() => {
+    const box = scroller.current, line = nowLine.current
+    if (!box || !line) return
+    const head = box.firstElementChild instanceof HTMLElement ? box.firstElementChild.offsetHeight : 0
+    box.scrollTop = Math.max(0, line.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - head - HH * 1.5)
+  }, [ws])
   const cols = 'grid grid-cols-[56px_repeat(7,minmax(0,1fr))]'
   return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-[12px] border border-line bg-surface">
+    <div ref={scroller} className="min-h-0 flex-1 overflow-auto rounded-[12px] border border-line bg-surface">
       <div className={`${cols} sticky top-0 z-[3] border-b border-line bg-surface`}>
         <span />
         {week.map((d, i) => {
@@ -361,7 +370,7 @@ function WeekGrid() {
                 )
               })}
               {d === t0 && nowTop > 0 && nowTop < (HR1 - HR0) * HH && (
-                <span aria-hidden="true" className="absolute right-0 -left-px z-[2] h-0.5 bg-accent" style={{ top: nowTop }}>
+                <span ref={nowLine} aria-hidden="true" className="absolute right-0 -left-px z-[2] h-0.5 bg-accent" style={{ top: nowTop }}>
                   <span className="absolute -top-1.5 -left-2 size-4 rounded-full bg-accent" />
                 </span>
               )}
