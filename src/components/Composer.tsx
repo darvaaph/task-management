@@ -120,15 +120,17 @@ export function QuickSheet({ onClose }: { onClose: () => void }) {
   return (
     <Sheet onClose={onClose} label="Tambah tugas" maxH="92%">
       <div className="font-mono text-[13px] font-semibold tracking-[.06em] text-fg3">TAMBAH TUGAS</div>
-      <input
-        autoFocus
-        value={c.title}
-        onChange={e => c.setTitle(e.target.value)}
-        onKeyDown={e => e.key === 'Enter' && c.submit()}
-        placeholder="Apa yang perlu dikerjakan?"
-        aria-label="Judul tugas baru"
-        className="h-26 border-0 border-b-[1.5px] border-line2 bg-transparent px-1 text-[19px] font-medium text-fg outline-none"
-      />
+      {/* No autofocus: the keyboard would cover Ke, date and priority. A boxed field shows it is tappable. */}
+      <label className="flex flex-col gap-3">
+        <span className="text-[13px] text-fg3">Judul tugas</span>
+        <input
+          value={c.title}
+          onChange={e => c.setTitle(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && c.submit()}
+          placeholder="Apa yang perlu dikerjakan?"
+          className="h-26 rounded-[12px] border-[1.5px] border-line2 bg-bg px-7 text-[17px] font-medium text-fg outline-none transition-colors duration-(--dur-fast) placeholder:text-fg3 focus:border-accent"
+        />
+      </label>
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-4">
           <span className="text-[13px] text-fg3">Ke</span>

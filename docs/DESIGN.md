@@ -62,7 +62,7 @@ Jangan membuat abu-abu yang lebih muda dari `--fg3` untuk teks. Untuk elemen yan
 
 `--ah` adalah hue aksen. Bawaan: Indigo `265`. Pilihan lain (fitur Pro "warna aksen"): Teal `195`, Tangerine `45`, Forest `150`. Teal memakai lightness 0.47 (bukan 0.5) karena pada 0.5 kontrasnya hanya 4,21:1. Setiap hue baru wajib dicek ulang kontrasnya: teks aksen di atas `--accent-soft` minimal 4,5:1.
 
-Aksen dipakai untuk: tab aktif, tombol utama yang berwarna (FAB), garis "hari ini" di Timeline, dan progres. Jangan memakai aksen untuk teks biasa atau dekorasi.
+Aksen dipakai untuk: tab aktif, tombol utama yang berwarna (FAB), garis fokus isian judul di sheet Tambah Tugas, garis "hari ini" di Timeline, dan progres. Jangan memakai aksen untuk teks biasa atau dekorasi.
 
 ### 2.3 Prioritas
 
@@ -252,7 +252,7 @@ Aturan: **tujuan dan tanggal bawaan mengikuti halaman, tapi selalu terlihat dan 
 | Detail proyek | Proyek itu › bagian pertama | Tanpa tanggal |
 | Daftar Proyek | Inbox | Hari ini |
 
-- Desktop: baris input + baris kecil "Ke [tujuan ▾] | chip tanggal | chip prioritas". HP: sheet Tambah Tugas dengan urutan judul → Ke → tanggal → prioritas → Simpan.
+- Desktop: baris input + baris kecil "Ke [tujuan ▾] | chip tanggal | chip prioritas". HP: sheet Tambah Tugas dengan urutan judul → Ke → tanggal → prioritas → Simpan. Judul **tidak** difokus otomatis (keyboard akan menutupi Ke, tanggal, dan prioritas); isiannya berupa kotak berlabel "Judul tugas" (latar `--bg`, border 1,5 px `--line2`, radius 12, teks 17 px) yang border-nya berganti ke `--accent` saat difokus.
 - Pemilih tujuan: daftar bergrup **INBOX** (tanpa area, per area) dan **PROYEK** (proyek, lalu bagian di bawahnya, menjorok). Terbuka di tempat, bukan pop-up melayang.
 - Setelah disimpan muncul toast "Ditambahkan ke [tujuan] · [tanggal]", supaya pengguna tahu tugasnya ke mana walau tidak terlihat di halaman ini.
 - Di desktop, tujuan dan tanggal tetap setelah menambah (untuk mencatat beruntun). Di HP, sheet ditutup dan semuanya kembali ke bawaan. Pindah halaman selalu mengembalikan ke bawaan.
@@ -457,6 +457,7 @@ Timeline di HP hanya-baca secara bawaan. Batang baru bisa digeser setelah meneka
 
 ## Riwayat perubahan
 
+- **0.22 (27 Nov 2026):** Sheet Tambah Tugas di HP tanpa fokus otomatis; judul jadi kotak berlabel dengan garis fokus aksen (§6.12).
 - **0.21 (27 Nov 2026):** Badge prioritas ringkas (§6.1), kartu "Semua tugas hari ini beres." (§6.26), Minggu dibuka di jam sekarang (§6.27), fade antarhalaman dan penanda menu geser di sidebar (§6.32).
 - **0.20 (27 Nov 2026):** Pill menu aktif di navigasi bawah HP bergeser saat berpindah menu (§6.8).
 - **0.19 (27 Nov 2026):** Navigasi bawah HP jadi pil melayang (maks. 400 px), isi HP dibatasi 600 px, FAB rata tepi kolom (§6.8).
