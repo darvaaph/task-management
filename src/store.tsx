@@ -2370,7 +2370,7 @@ function useStoreValue() {
         ...backup.projects.filter(p => p.archived),
         ...backup.projects.filter(p => !p.archived),
       ]
-      const uidTag = curUid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16) || 'u'
+      const uidTag = curUid.replace(/[^a-zA-Z0-9_-]/g, '') || 'u'
       const callCreate = fb.httpsCallable<
         { projectId: string; name: string; ownerArea: string | null; color: string; start: string; due: string; sections: string[] },
         { projectId: string; alreadyExisted?: boolean }
@@ -2403,7 +2403,7 @@ function useStoreValue() {
           secChars += sec.length
         }
 
-        const cloudPid = `mig_${uidTag}_${safeDocId(p.id, `p${i}`)}`.slice(0, 128)
+        const cloudPid = `mig_${uidTag}_${safeDocId(p.id, `p${i}`)}`.slice(0, 100)
         let alreadyExisted = false
         try {
           const res = await callCreate({ projectId: cloudPid, name, ownerArea: mappedArea, color, start, due, sections: cleanSections })

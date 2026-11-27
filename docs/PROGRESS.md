@@ -1,6 +1,6 @@
 # Progres TaskFlow
 
-Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bagian pekerjaan.
+Terakhir diperbarui: 27 November 2026. Perbarui file ini setiap selesai satu bagian pekerjaan.
 
 ## Sudah dibangun (desktop + HP, terang + gelap)
 
@@ -43,6 +43,7 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 | Backend Fase 2D — Proyek, bagian, dan tugas proyek di Firestore: listener `projects` aktif, `projects/{pid}/tasks`, `projects/{pid}/members` (proyek bersama/terbuka), `users/{uid}/reminders`, muat sekali arsip & aktivitas, callable kuota Opsi a (`createProject`, `setProjectArchived`, `deleteProject`) dengan tunda Urungkan 6 detik, antrean tulis 600 ms untuk tugas & nama proyek, resolver `personOf` & `isProFor` mengikuti `ownerPlan` | `src/store.tsx`, `src/lib/firebase.ts`, `src/lib/types.ts`, `src/lib/cloudCodec.ts`, `src/lib/writeQueue.ts`, `src/components/Composer.tsx`, `src/components/TaskRow.tsx`, `src/components/TaskDetail.tsx`, `src/components/Manage.tsx`, `src/components/Share.tsx`, `src/views/ProjectsView.tsx`, `src/views/ProjectView.tsx`, `src/views/JadwalView.tsx`, `src/App.tsx`, `firestore.rules`, `tests/rules/projects.test.mjs` | HANDOFF-FASE2 §4 (2D) |
 | Backend Fase 2E — Tautan undangan acak `${location.origin}/invite/{token}`, pembuatan & rotasi token otomatis di `invites/{token}`, halaman `/invite/{token}` (offline, tidak berlaku/diganti, penuh, sudah anggota), alur belum masuk akun lewat `sessionStorage`, dialog "Masukkan ke area mana?" pasca-bergabung, keluar anggota & pembersihan UI simulasi untuk akun sungguhan | `src/lib/localStore.ts`, `src/lib/cloudCodec.ts`, `src/components/Invite.tsx`, `src/components/Share.tsx`, `src/views/AuthView.tsx`, `src/store.tsx`, `src/App.tsx`, `docs/DESIGN.md` | HANDOFF-FASE2 §4 (2E) |
 | Backend Fase 2F — Pemindahan proyek lokal (`byUid` & pra-login) ke akun Cloud dengan kepatuhan kuota 5 aktif Gratis (kelebihan tetap lokal & ditawarkan lagi), pemetaan PIC (`me` → `uid`, contoh → `null`), idempotensi ID deterministik & tahan klik ganda/pembatalan tengah jalan, perbaikan flash `createProject`, serta verifikasi Timeline & riwayat aktivitas terbuka untuk seluruh anggota ketika pemilik Pro | `src/lib/localStore.ts`, `src/store.tsx`, `src/App.tsx`, `src/views/ProjectsView.tsx`, `tests/functions/migration.test.mjs`, `docs/DESIGN.md`, `docs/PROGRESS.md` | HANDOFF-FASE2 §4 (2F); Fase 2 selesai, siap tinjauan keamanan sebelum Fase 3 |
+| Perbaikan Fase 2 (P1) — Pengamanan `projectId` pada `createProject` (hanya terima `mig_${uid}_` dengan `uid` penuh + `SAFE_ID_RE`), nisan `deletedProjects/{projectId}` transaksional di `deleteProject` & dicek di `createProject`, blokir klien pada `deletedProjects` di Security Rules, serta penyesuaian `uidTag` penuh & batas 100 karakter di migrasi lokal | `functions/index.js`, `firestore.rules`, `src/store.tsx`, `tests/functions/collaboration.test.mjs`, `tests/functions/migration.test.mjs`, `tests/rules/projects.test.mjs` | HANDOFF-FASE2-PERBAIKAN (P1) |
 
 ## Belum dibangun
 
@@ -53,7 +54,7 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Keterbatasan yang diketahui
 
-- **Fase 2 belum final:** tinjauan menemukan celah pengambilalihan ID proyek yang dihapus, warna proyek yang bisa memuat alamat luar, dan tawaran beli Pro yang keliru untuk anggota. Lihat `docs/HANDOFF-FASE2-PERBAIKAN.md`.
+- **Fase 2 belum final:** tinjauan menemukan celah pengambilalihan ID proyek yang dihapus (P1 sudah diperbaiki), warna proyek yang bisa memuat alamat luar, dan tawaran beli Pro yang keliru untuk anggota. Lihat `docs/HANDOFF-FASE2-PERBAIKAN.md`.
 - **Fase 1 final setelah tinjauan ulang (26 Nov 2026).** Sisa kecil yang sudah ditangani: "Coba Mode Demo" tidak lagi menimpa data lokal lama yang belum dimigrasikan (disimpan di slot `legacy` dan tetap ditawarkan saat login), dan data lokal disinkronkan antar tab lewat event `storage`. Yang sengaja tidak diubah: penulisan saat halaman ditutup tidak dijamin oleh browser (ketikan terakhir bisa hilang pada kasus langka), dan berkas Firebase baru tersimpan service worker setelah dipakai pertama kali. Belum diuji: penulisan saat offline dan alur login penuh setelah perubahan terakhir (peramban uji tidak bisa menjangkau `apis.google.com`).
 - Proyek, tugas proyek, riwayat aktivitas, dan setelan akun masih lokal di browser (`localStorage`, dipisah per `uid` akun sehingga aman saat keluar-masuk atau ganti akun, tetapi **terikat ke satu perangkat sampai Fase 2**); area dan tugas lepas akun Google sudah tersinkron ke Firestore (dengan cache offline).
 - Data demo dibuat relatif terhadap hari ini, jadi tanggal di demo selalu terlihat baru.
@@ -61,6 +62,7 @@ Terakhir diperbarui: 26 November 2026. Perbarui file ini setiap selesai satu bag
 
 ## Riwayat
 
+- **27 Nov 2026** — Perbaikan Fase 2 (P1): `createProject` hanya menerima `projectId` berawalan `mig_${uid}_` penuh (lolos `SAFE_ID_RE`), `deleteProject` menulis nisan `deletedProjects/{projectId}` transaksional yang ditolak `createProject` & diblokir untuk klien di `firestore.rules`, `uidTag` migrasi lokal memakai `uid` penuh dengan batas 100 karakter, serta tes reproduksi + aturan baru hijau.
 - **27 Nov 2026** — Backend Fase 2F (akhir Fase 2): migrasi proyek lokal (`byUid` & tugas proyek, patuh kuota, idempoten, dapat dibatalkan di tengah jalan, pemetaan PIC `me` → `uid` & contoh → `null`) serta verifikasi buka kunci Timeline & riwayat aktivitas bagi anggota saat pemilik Pro.
 - **26 Nov 2026** — Backend Fase 2E: alur tautan undangan `/invite/{token}` penuh (token acak >= 20 karakter, rotasi & nonaktifkan tautan lama, 4 status undangan + lanjut setelah login Google, dialog "Masukkan ke area mana?" pasca-bergabung, dan tes 2 akun di emulator).
 - **26 Nov 2026** — Backend Fase 2D: proyek, bagian, tugas proyek, dan pengingat per-anggota tersambung ke Firestore & Callable Functions; fitur Pro di dalam proyek mengikuti `ownerPlan`; `personOf` menggantikan `PEOPLE` statis; Mode Demo tetap lokal.

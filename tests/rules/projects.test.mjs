@@ -890,4 +890,30 @@ describe('Serangan 12 & 13 — Riwayat aktivitas proyek', () => {
     await assertFails(proOwnerDb.doc('projects/proj-pro/activity/act-pro-1').update({ text: 'Diubah' }))
     await assertFails(proOwnerDb.doc('projects/proj-pro/activity/act-pro-1').delete())
   })
+
+  it('14. menolak klien membaca, mendaftar, atau menulis koleksi nisan deletedProjects', async () => {
+    await testEnv.withSecurityRulesDisabled(async (ctx) => {
+      await ctx.firestore().doc('deletedProjects/proj-deleted-1').set({
+        ownerId: PRO_OWNER,
+        deletedAt: new Date(),
+      })
+    })
+
+    const ownerDb = authedDb(PRO_OWNER)
+    const outsiderDb = authedDb(OUTSIDER)
+    const anonDb = unauthedDb()
+
+    await assertFails(anonDb.doc('deletedProjects/proj-deleted-1').get())
+    await assertFails(ownerDb.doc('deletedProjects/proj-deleted-1').get())
+    await assertFails(outsiderDb.doc('deletedProjects/proj-deleted-1').get())
+    await assertFails(ownerDb.collection('deletedProjects').get())
+    await assertFails(
+      ownerDb.doc('deletedProjects/proj-deleted-2').set({
+        ownerId: PRO_OWNER,
+        deletedAt: new Date(),
+      }),
+    )
+    await assertFails(ownerDb.doc('deletedProjects/proj-deleted-1').update({ ownerId: OUTSIDER }))
+    await assertFails(ownerDb.doc('deletedProjects/proj-deleted-1').delete())
+  })
 })

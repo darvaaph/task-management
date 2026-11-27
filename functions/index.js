@@ -114,7 +114,13 @@ export const createProject = onCall({ region: REGION }, async (request) => {
 
   let projectId = null
   if (data.projectId !== undefined && data.projectId !== null) {
-    if (typeof data.projectId !== 'string' || !SAFE_ID_RE.test(data.projectId)) {
+    const expectedPrefix = `mig_${uid}_`
+    if (
+      typeof data.projectId !== 'string' ||
+      !SAFE_ID_RE.test(data.projectId) ||
+      !data.projectId.startsWith(expectedPrefix) ||
+      data.projectId.length <= expectedPrefix.length
+    ) {
       throw new HttpsError('invalid-argument', 'ID proyek tidak valid.')
     }
     projectId = data.projectId
@@ -148,18 +154,24 @@ export const createProject = onCall({ region: REGION }, async (request) => {
   }
 
   const projRef = projectId ? db.doc(`projects/${projectId}`) : db.collection('projects').doc()
+  const deletedRef = db.doc(`deletedProjects/${projRef.id}`)
   const userRef = db.doc(`users/${uid}`)
   const activeQuery = db.collection('projects').where('ownerId', '==', uid).where('archived', '==', false)
 
   return db.runTransaction(async (tx) => {
-    const [userSnap, existingProjSnap, activeSnap] = await Promise.all([
+    const [userSnap, existingProjSnap, deletedProjSnap, activeSnap] = await Promise.all([
       tx.get(userRef),
       tx.get(projRef),
+      tx.get(deletedRef),
       tx.get(activeQuery),
     ])
 
     if (!userSnap.exists) {
       throw new HttpsError('failed-precondition', 'Profil akun belum siap. Coba lagi sebentar.')
+    }
+
+    if (deletedProjSnap.exists) {
+      throw new HttpsError('already-exists', 'Gagal membuat proyek. Silakan coba lagi.')
     }
 
     if (existingProjSnap.exists) {
@@ -300,6 +312,11 @@ export const deleteProject = onCall({ region: REGION }, async (request) => {
     const nextActiveCount = wasArchived ? activeSnap.size : Math.max(0, activeSnap.size - 1)
 
     tx.delete(projRef)
+    // Tombstone blocks immediate or delayed reuse of deleted project IDs.
+    tx.set(db.doc(`deletedProjects/${projectId}`), {
+      ownerId: uid,
+      deletedAt: FieldValue.serverTimestamp(),
+    })
     if (userSnap.exists) {
       tx.update(userRef, { activeOwned: nextActiveCount })
     }

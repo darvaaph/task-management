@@ -123,6 +123,7 @@ rules_version = '2';
 //
 // Denied to clients:
 //   - purchases/{purchaseId} (server-only, Cloud Functions)
+//   - deletedProjects/{projectId} (server-only tombstones, Cloud Functions)
 //   - all other unmatched paths (default deny)
 // ===============================================================
 
@@ -560,6 +561,11 @@ service cloud.firestore {
 
     // Server-only: payment records written exclusively by Cloud Functions.
     match /purchases/{purchaseId} {
+      allow read, write: if false;
+    }
+
+    // Server-only: tombstones for deleted project IDs written exclusively by Cloud Functions.
+    match /deletedProjects/{projectId} {
       allow read, write: if false;
     }
 

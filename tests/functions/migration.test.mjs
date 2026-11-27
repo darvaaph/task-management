@@ -81,7 +81,7 @@ async function registerUser(tag, displayName, plan = 'free') {
 
 /** Mirror src/store.tsx migrateLocalData deterministic IDs and PIC mapping for a subset/run. */
 async function migrateProjectsBatch(session, localProjects, localTasks, { stopAfter = Infinity } = {}) {
-  const uidTag = session.uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16) || 'u'
+  const uidTag = session.uid.replace(/[^a-zA-Z0-9_-]/g, '') || 'u'
   const callCreate = session.call('createProject')
   const migratedIds = []
   let quotaHit = false
@@ -89,7 +89,7 @@ async function migrateProjectsBatch(session, localProjects, localTasks, { stopAf
   for (let i = 0; i < localProjects.length; i++) {
     if (i >= stopAfter) break
     const p = localProjects[i]
-    const cloudPid = `mig_${uidTag}_${p.id}`.slice(0, 128)
+    const cloudPid = `mig_${uidTag}_${p.id}`.slice(0, 100)
     let alreadyExisted = false
     try {
       const res = await callCreate({
@@ -183,7 +183,7 @@ describe('Cloud Functions 2F — migrasi proyek lokal, idempotensi, PIC, dan kuo
     const ownedSnap = await adminDb.collection('projects').where('ownerId', '==', user.uid).get()
     assert.equal(ownedSnap.size, 3)
 
-    const uidTag = user.uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16) || 'u'
+    const uidTag = user.uid.replace(/[^a-zA-Z0-9_-]/g, '') || 'u'
     const lp1TasksSnap = await adminDb.collection(`projects/mig_${uidTag}_lp1/tasks`).get()
     assert.equal(lp1TasksSnap.size, 2)
     const byId = Object.fromEntries(lp1TasksSnap.docs.map((d) => [d.id, d.data()]))
@@ -221,7 +221,7 @@ describe('Cloud Functions 2F — migrasi proyek lokal, idempotensi, PIC, dan kuo
     assert.equal(remaining[0].id, 'six_6')
 
     // Archive one project to free a slot, then migrate the 6th local project.
-    const uidTag = user.uid.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 16) || 'u'
+    const uidTag = user.uid.replace(/[^a-zA-Z0-9_-]/g, '') || 'u'
     await user.call('setProjectArchived')({ projectId: `mig_${uidTag}_six_5`, archived: true })
 
     const run2 = await migrateProjectsBatch(user, remaining, tasks)

@@ -169,7 +169,7 @@ describe('Cloud Functions 2C — Kuota proyek aktif (Opsi a: createProject, setP
 
     const createdIds = []
     for (let i = 1; i <= 5; i++) {
-      const detId = `proj_quota_${freeOwner.uid.slice(0, 8)}_${i}`
+      const detId = `mig_${freeOwner.uid}_quota_${i}`
       const res = await freeOwner.call('createProject')({
         projectId: detId,
         name: `Proyek ${i}`,
@@ -579,5 +579,156 @@ describe('Cloud Functions 2C — onProjectTaskWritten, onProjectDeleted, dan rem
 
     const actSnap = await adminDb.collection(`projects/${pid}/activity`).get()
     assert.ok(actSnap.docs.some((d) => d.data().text === 'Dimas Keluar dikeluarkan dari proyek'))
+  })
+})
+
+describe('Perbaikan P1 — Perlindungan projectId pada createProject & nisan deletedProjects', () => {
+  it('menolak (a) mantan anggota mengambil alih ID proyek yang dihapus dan membaca tugasnya', async () => {
+    const owner = await registerUser('p1a-owner', 'Pemilik P1', 'pro')
+    const formerMember = await registerUser('p1a-former', 'Mantan Anggota P1', 'free')
+
+    const { data: created } = await owner.call('createProject')({
+      name: 'Proyek Rahasia Tugas',
+      ownerArea: 'kantor',
+      color: 'var(--area-kantor)',
+      start: '2026-11-26',
+      due: '2026-12-20',
+    })
+    const pid = created.projectId
+    const token = `tok_p1_${Date.now()}_0123456789abcdef`
+    await createInviteAsOwner(owner, pid, token, 'Proyek Rahasia Tugas', 1, false)
+    await formerMember.call('joinProject')({ token })
+    await owner.call('removeMember')({ projectId: pid, memberUid: formerMember.uid })
+
+    const taskBatch = adminDb.batch()
+    for (let i = 0; i < 15; i++) {
+      taskBatch.set(adminDb.doc(`projects/${pid}/tasks/secret_${i}`), {
+        title: `Tugas Rahasia ${i}`,
+        project: pid,
+        area: null,
+        section: null,
+        assignee: owner.uid,
+        status: 'todo',
+        prio: 'high',
+        start: null,
+        due: null,
+        time: null,
+        dur: null,
+        rec: null,
+        notes: 'rahasia',
+        createdBy: owner.uid,
+        updatedBy: owner.uid,
+        createdAt: new Date(),
+      })
+    }
+    await taskBatch.commit()
+
+    await owner.call('deleteProject')({ projectId: pid })
+
+    // Former member immediately tries to hijack the deleted projectId before onProjectDeleted finishes.
+    await assert.rejects(
+      () =>
+        formerMember.call('createProject')({
+          projectId: pid,
+          name: 'Ambil Alih Proyek',
+          ownerArea: null,
+          color: 'var(--accent)',
+          start: '2026-11-26',
+          due: '2026-12-20',
+        }),
+      (err) => err.code === 'functions/invalid-argument' || err.code === 'functions/already-exists',
+    )
+  })
+
+  it('menolak (b) ID bebas dan (c) ID berawalan mig_ milik uid lain pada createProject', async () => {
+    const owner = await registerUser('p1bc-owner', 'Pemilik BC', 'free')
+    const other = await registerUser('p1bc-other', 'Pengguna Lain BC', 'free')
+    const suffix = Date.now()
+
+    // (b) Arbitrary projectId must be rejected with invalid-argument.
+    await assert.rejects(
+      () =>
+        owner.call('createProject')({
+          projectId: `proj_bebas_${suffix}`,
+          name: 'ID Bebas',
+          ownerArea: null,
+          color: 'var(--accent)',
+          start: '2026-11-26',
+          due: '2026-12-20',
+        }),
+      (err) => err.code === 'functions/invalid-argument',
+    )
+
+    // (c) projectId with another user's uid after mig_ must be rejected with invalid-argument.
+    await assert.rejects(
+      () =>
+        other.call('createProject')({
+          projectId: `mig_${owner.uid}_curian_${suffix}`,
+          name: 'ID Milik Orang Lain',
+          ownerArea: null,
+          color: 'var(--accent)',
+          start: '2026-11-26',
+          due: '2026-12-20',
+        }),
+      (err) => err.code === 'functions/invalid-argument',
+    )
+
+    // Truncated (16-char) uid prefix or empty suffix must also be rejected.
+    await assert.rejects(
+      () =>
+        owner.call('createProject')({
+          projectId: `mig_${owner.uid.slice(0, 16)}_pendek_${suffix}`,
+          name: 'UID Terpotong',
+          ownerArea: null,
+          color: 'var(--accent)',
+          start: '2026-11-26',
+          due: '2026-12-20',
+        }),
+      (err) => err.code === 'functions/invalid-argument',
+    )
+    await assert.rejects(
+      () =>
+        owner.call('createProject')({
+          projectId: `mig_${owner.uid}_`,
+          name: 'Akhiran Kosong',
+          ownerArea: null,
+          color: 'var(--accent)',
+          start: '2026-11-26',
+          due: '2026-12-20',
+        }),
+      (err) => err.code === 'functions/invalid-argument',
+    )
+  })
+
+  it('menulis nisan deletedProjects/{projectId} saat deleteProject dan menolak pembuatan ulang ID yang sudah punya nisan', async () => {
+    const owner = await registerUser('p1d-owner', 'Pemilik Nisan', 'free')
+    const migPid = `mig_${owner.uid}_tombstone_${Date.now()}`
+
+    await owner.call('createProject')({
+      projectId: migPid,
+      name: 'Proyek Migrasi Nisan',
+      ownerArea: null,
+      color: 'var(--accent)',
+      start: '2026-11-26',
+      due: '2026-12-20',
+    })
+    await owner.call('deleteProject')({ projectId: migPid })
+
+    const tombstoneSnap = await adminDb.doc(`deletedProjects/${migPid}`).get()
+    assert.equal(tombstoneSnap.exists, true)
+    assert.equal(tombstoneSnap.data().ownerId, owner.uid)
+
+    await assert.rejects(
+      () =>
+        owner.call('createProject')({
+          projectId: migPid,
+          name: 'Buat Ulang ID Dihapus',
+          ownerArea: null,
+          color: 'var(--accent)',
+          start: '2026-11-26',
+          due: '2026-12-20',
+        }),
+      (err) => err.code === 'functions/already-exists',
+    )
   })
 })
